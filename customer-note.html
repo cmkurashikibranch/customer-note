@@ -75,11 +75,53 @@
 </div>
 
 <script>
+const STORAGE_KEY = 'customer-note-v1';
+
+const DEFAULT_DATA = {
+  customers: [],
+  settings: { followUpDays: 14 },
+  nextId: 1
+};
+
+let appData = null;
+
+function loadData() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return structuredClone(DEFAULT_DATA);
+    const parsed = JSON.parse(raw);
+    return Object.assign(structuredClone(DEFAULT_DATA), parsed);
+  } catch (e) {
+    console.error('loadData failed', e);
+    return structuredClone(DEFAULT_DATA);
+  }
+}
+
+function saveData() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
+    return true;
+  } catch (e) {
+    // QuotaExceededError 等
+    alert('保存に失敗しました。容量がいっぱいの可能性があります。古いお客様の写真を削除してください。');
+    return false;
+  }
+}
+
+function todayStr() {
+  const d = new Date();
+  return d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0');
+}
+
 function showView(name) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.getElementById('view-' + name).classList.add('active');
   window.scrollTo(0, 0);
 }
+
+appData = loadData();
 </script>
 </body>
 </html>
