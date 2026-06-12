@@ -154,8 +154,9 @@ function showView(name) {
 }
 
 let regPhotoData = null; // base64 or null
+let regPhotoBusy = false;
 
-function resizeImage(file, callback) {
+function resizeImage(file, callback, onFail) {
   const img = new Image();
   const url = URL.createObjectURL(file);
   img.onload = () => {
@@ -173,7 +174,11 @@ function resizeImage(file, callback) {
     canvas.getContext('2d').drawImage(img, 0, 0, width, height);
     callback(canvas.toDataURL('image/jpeg', 0.7));
   };
-  img.onerror = () => { URL.revokeObjectURL(url); alert('画像を読み込めませんでした'); };
+  img.onerror = () => {
+    URL.revokeObjectURL(url);
+    alert('画像を読み込めませんでした');
+    if (onFail) onFail();
+  };
   img.src = url;
 }
 
@@ -189,6 +194,7 @@ function resetRegisterForm() {
 }
 
 function saveCustomer() {
+  if (regPhotoBusy) { alert('写真を処理中です。少し待ってからもう一度押してください。'); return; }
   const name = document.getElementById('reg-name').value.trim();
   if (!name) { alert('お名前を入力してください'); return; }
   const note = document.getElementById('reg-note').value.trim();
@@ -218,11 +224,20 @@ appData = loadData();
 document.getElementById('reg-photo-input').addEventListener('change', (e) => {
   const file = e.target.files[0];
   if (!file) return;
+  regPhotoBusy = true;
   resizeImage(file, (dataUrl) => {
     regPhotoData = dataUrl;
     const prev = document.getElementById('reg-photo-preview');
     prev.src = dataUrl;
     prev.style.display = 'block';
+    regPhotoBusy = false;
+  }, () => {
+    regPhotoData = null;
+    const prev = document.getElementById('reg-photo-preview');
+    prev.style.display = 'none';
+    prev.src = '';
+    e.target.value = '';
+    regPhotoBusy = false;
   });
 });
 </script>
