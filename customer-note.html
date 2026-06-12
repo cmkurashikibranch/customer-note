@@ -123,6 +123,11 @@
 
 <div id="view-detail" class="view">
   <span class="back-link" onclick="showView('home')">← もどる</span>
+  <div id="detail-content"></div>
+  <div id="photo-modal" onclick="this.style.display='none'"
+    style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.9); z-index:100; align-items:center; justify-content:center; padding:16px;">
+    <img id="photo-modal-img" style="max-width:100%; max-height:90vh; border-radius:8px;">
+  </div>
 </div>
 
 <script>
@@ -276,8 +281,71 @@ function renderHome() {
     appData.customers.length ? 'none' : 'block';
 }
 
+let detailId = null;
+
 function openDetail(id) {
-  // Task 5 で実装
+  detailId = id;
+  renderDetail();
+  showView('detail');
+}
+
+function renderDetail() {
+  const c = appData.customers.find(x => x.id === detailId);
+  if (!c) { showView('home'); return; }
+  const photo = c.photo
+    ? `<img src="${c.photo}" onclick="openPhotoModal()" style="width:100%; border-radius:12px; cursor:zoom-in;">`
+    : '';
+  const contacts = [
+    c.phone ? `<a class="btn btn-ghost" href="tel:${escapeHtml(c.phone)}">📞 電話する</a>` : '',
+    c.email ? `<a class="btn btn-ghost" href="mailto:${escapeHtml(c.email)}">✉️ メールする</a>` : ''
+  ].filter(Boolean).join(' ');
+  const history = [...c.history].reverse().map(h =>
+    `<div style="padding:8px 0; border-bottom:1px solid #F1F5F9;">
+      <div style="font-size:12px; color:var(--text-2);">${h.date}</div>
+      <div style="font-size:14px;">${escapeHtml(h.note)}</div>
+    </div>`).join('');
+  document.getElementById('detail-content').innerHTML = `
+    <div class="card">
+      ${photo}
+      <h1 style="margin:10px 0 2px;">${escapeHtml(c.name)}さん</h1>
+      <div class="cust-sub">${escapeHtml(c.company || '')}</div>
+      <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">${contacts}</div>
+    </div>
+    <button class="btn" style="width:100%; margin-bottom:10px;" onclick="markContacted()">✅ 連絡した</button>
+    <div class="card">
+      <div style="font-size:13px; color:var(--text-2); margin-bottom:4px;">やりとり履歴</div>
+      ${history || '<div class="cust-sub">まだ履歴がありません</div>'}
+    </div>
+    <button class="btn btn-ghost" style="width:100%; margin-top:6px;" onclick="deleteCustomer()">このお客様を削除</button>`;
+}
+
+function openPhotoModal() {
+  const c = appData.customers.find(x => x.id === detailId);
+  if (!c || !c.photo) return;
+  document.getElementById('photo-modal-img').src = c.photo;
+  document.getElementById('photo-modal').style.display = 'flex';
+}
+
+function markContacted() {
+  const c = appData.customers.find(x => x.id === detailId);
+  if (!c) return;
+  const note = prompt('どんなやりとりでしたか？（空欄でもOK）');
+  if (note === null) return; // キャンセル
+  c.history.push({ date: todayStr(), note: note.trim() || '連絡した' });
+  c.lastContact = todayStr();
+  saveData();
+  renderDetail();
+  renderHome();
+}
+
+function deleteCustomer() {
+  const c = appData.customers.find(x => x.id === detailId);
+  if (!c) return;
+  if (!confirm(c.name + 'さんを削除します。よろしいですか？')) return;
+  appData.customers = appData.customers.filter(x => x.id !== detailId);
+  saveData();
+  renderHome();
+  showView('home');
 }
 
 appData = loadData();
