@@ -57,6 +57,13 @@
     margin-bottom: 12px;
     display: inline-block;
   }
+  .field-label { display:block; font-size:12px; color:var(--text-2); margin:10px 0 4px; }
+  .field-input {
+    width:100%; padding:10px 12px; font-size:15px;
+    border:1px solid #E2E8F0; border-radius:10px;
+    background:#FBFCFE; color:var(--text);
+  }
+  .field-input:focus { outline:2px solid var(--accent); border-color:transparent; }
 </style>
 </head>
 <body>
@@ -68,6 +75,27 @@
 <div id="view-register" class="view">
   <span class="back-link" onclick="showView('home')">← もどる</span>
   <h1>お客様を登録</h1>
+  <div class="card" style="text-align:center;">
+    <img id="reg-photo-preview" style="display:none; width:100%; border-radius:12px; margin-bottom:8px;">
+    <label class="btn btn-ghost" style="display:block;">
+      📷 名刺を撮る・選ぶ
+      <input type="file" id="reg-photo-input" accept="image/*" capture="environment" style="display:none;">
+    </label>
+    <!-- 将来のOCR/AIボタン差し込み位置 -->
+  </div>
+  <div class="card">
+    <label class="field-label">お名前 *</label>
+    <input type="text" id="reg-name" class="field-input" placeholder="山田 太郎">
+    <label class="field-label">会社・屋号</label>
+    <input type="text" id="reg-company" class="field-input">
+    <label class="field-label">電話番号</label>
+    <input type="tel" id="reg-phone" class="field-input">
+    <label class="field-label">メール</label>
+    <input type="email" id="reg-email" class="field-input">
+    <label class="field-label">メモ（出会った場所など）</label>
+    <textarea id="reg-note" class="field-input" rows="2"></textarea>
+  </div>
+  <button class="btn" style="width:100%;" onclick="saveCustomer()">保存する</button>
 </div>
 
 <div id="view-detail" class="view">
@@ -125,7 +153,78 @@ function showView(name) {
   window.scrollTo(0, 0);
 }
 
+let regPhotoData = null; // base64 or null
+
+function resizeImage(file, callback) {
+  const img = new Image();
+  const url = URL.createObjectURL(file);
+  img.onload = () => {
+    URL.revokeObjectURL(url);
+    const MAX = 800;
+    let { width, height } = img;
+    if (Math.max(width, height) > MAX) {
+      const scale = MAX / Math.max(width, height);
+      width = Math.round(width * scale);
+      height = Math.round(height * scale);
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+    callback(canvas.toDataURL('image/jpeg', 0.7));
+  };
+  img.onerror = () => { URL.revokeObjectURL(url); alert('画像を読み込めませんでした'); };
+  img.src = url;
+}
+
+function resetRegisterForm() {
+  regPhotoData = null;
+  const prev = document.getElementById('reg-photo-preview');
+  prev.style.display = 'none';
+  prev.src = '';
+  ['reg-name','reg-company','reg-phone','reg-email','reg-note'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('reg-photo-input').value = '';
+}
+
+function saveCustomer() {
+  const name = document.getElementById('reg-name').value.trim();
+  if (!name) { alert('お名前を入力してください'); return; }
+  const note = document.getElementById('reg-note').value.trim();
+  const customer = {
+    id: appData.nextId++,
+    name,
+    company: document.getElementById('reg-company').value.trim(),
+    phone: document.getElementById('reg-phone').value.trim(),
+    email: document.getElementById('reg-email').value.trim(),
+    photo: regPhotoData,
+    lastContact: todayStr(),
+    history: [{ date: todayStr(), note: note || '登録' }]
+  };
+  appData.customers.push(customer);
+  if (!saveData()) { appData.customers.pop(); appData.nextId--; return; }
+  resetRegisterForm();
+  renderHome();
+  showView('home');
+}
+
+function renderHome() {
+  // Task 4 で実装予定
+}
+
 appData = loadData();
+
+document.getElementById('reg-photo-input').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  resizeImage(file, (dataUrl) => {
+    regPhotoData = dataUrl;
+    const prev = document.getElementById('reg-photo-preview');
+    prev.src = dataUrl;
+    prev.style.display = 'block';
+  });
+});
 </script>
 </body>
 </html>
