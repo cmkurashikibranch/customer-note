@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>お客様ノート</title>
+<style>
+  :root {
+    --bg: #F8FAFC;
+    --card: #FFFFFF;
+    --accent: #2563EB;
+    --accent-soft: #EFF6FF;
+    --text: #0F172A;
+    --text-2: #64748B;
+    --radius: 16px;
+    --shadow: 0 1px 3px rgba(15,23,42,0.08);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 16px;
+    padding-bottom: 90px;
+  }
+  h1 { font-size: 20px; margin-bottom: 16px; }
+  .view { display: none; }
+  .view.active { display: block; }
+  .card {
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 14px 16px;
+    margin-bottom: 10px;
+  }
+  .btn {
+    display: inline-block;
+    border: none;
+    border-radius: 12px;
+    padding: 12px 20px;
+    font-size: 15px;
+    cursor: pointer;
+    background: var(--accent);
+    color: #fff;
+  }
+  .btn-ghost {
+    background: transparent;
+    color: var(--text-2);
+    border: 1px solid #E2E8F0;
+  }
+  .back-link {
+    color: var(--text-2);
+    cursor: pointer;
+    font-size: 14px;
+    margin-bottom: 12px;
+    display: inline-block;
+  }
+</style>
+</head>
+<body>
+
+<div id="view-home" class="view active">
+  <h1>お客様ノート</h1>
+</div>
+
+<div id="view-register" class="view">
+  <span class="back-link" onclick="showView('home')">← もどる</span>
+  <h1>お客様を登録</h1>
+</div>
+
+<div id="view-detail" class="view">
+  <span class="back-link" onclick="showView('home')">← もどる</span>
+</div>
+
+<script>
+function showView(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-' + name).classList.add('active');
+  window.scrollTo(0, 0);
+}
+</script>
+</body>
+</html>
