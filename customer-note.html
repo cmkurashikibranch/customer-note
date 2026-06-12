@@ -90,7 +90,11 @@ function loadData() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return structuredClone(DEFAULT_DATA);
     const parsed = JSON.parse(raw);
-    return Object.assign(structuredClone(DEFAULT_DATA), parsed);
+    const data = Object.assign(structuredClone(DEFAULT_DATA), parsed);
+    data.settings = Object.assign(structuredClone(DEFAULT_DATA.settings), parsed.settings);
+    if (!Array.isArray(data.customers)) data.customers = [];
+    if (typeof data.nextId !== 'number') data.nextId = data.customers.length + 1;
+    return data;
   } catch (e) {
     console.error('loadData failed', e);
     return structuredClone(DEFAULT_DATA);
