@@ -64,12 +64,35 @@
     background:#FBFCFE; color:var(--text);
   }
   .field-input:focus { outline:2px solid var(--accent); border-color:transparent; }
+  #fab {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    box-shadow: 0 4px 12px rgba(37,99,235,0.35); z-index: 10;
+  }
+  .cust-row { display:flex; align-items:center; gap:12px; cursor:pointer; }
+  .cust-thumb {
+    width:48px; height:48px; border-radius:10px; object-fit:cover;
+    background:var(--accent-soft); flex-shrink:0;
+    display:flex; align-items:center; justify-content:center; font-size:20px;
+  }
+  .cust-name { font-size:15px; font-weight:600; }
+  .cust-sub { font-size:12px; color:var(--text-2); }
 </style>
 </head>
 <body>
 
 <div id="view-home" class="view active">
   <h1>お客様ノート</h1>
+  <input type="search" id="home-search" class="field-input" placeholder="🔍 名前・会社で検索" style="margin-bottom:14px;">
+  <div id="followup-section" style="display:none;">
+    <div style="font-size:13px; color:var(--accent); margin-bottom:6px;">💬 そろそろ連絡しませんか？</div>
+    <div id="followup-list" style="border:1.5px solid var(--accent-soft); background:var(--accent-soft); border-radius:var(--radius); padding:8px; margin-bottom:16px;"></div>
+  </div>
+  <div style="font-size:13px; color:var(--text-2); margin-bottom:6px;">みなさん</div>
+  <div id="customer-list"></div>
+  <div id="empty-message" style="display:none; text-align:center; color:var(--text-2); padding:40px 0;">
+    まだ登録がありません。<br>下のボタンから名刺を撮ってみましょう。
+  </div>
+  <button class="btn" id="fab" onclick="showView('register')">📷 名刺を撮る</button>
 </div>
 
 <div id="view-register" class="view">
@@ -215,11 +238,52 @@ function saveCustomer() {
   showView('home');
 }
 
+function daysSince(dateStr) {
+  return Math.floor((new Date(todayStr()) - new Date(dateStr)) / 86400000);
+}
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, m =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+function customerCard(c) {
+  const thumb = c.photo
+    ? `<img class="cust-thumb" src="${c.photo}" alt="">`
+    : `<div class="cust-thumb">👤</div>`;
+  const days = daysSince(c.lastContact);
+  const sub = [c.company, days === 0 ? '今日連絡' : days + '日前に連絡'].filter(Boolean).join('・');
+  return `<div class="card cust-row" onclick="openDetail(${c.id})">
+    ${thumb}
+    <div><div class="cust-name">${escapeHtml(c.name)}さん</div>
+    <div class="cust-sub">${escapeHtml(sub)}</div></div>
+  </div>`;
+}
+
 function renderHome() {
-  // Task 4 で実装予定
+  const q = document.getElementById('home-search').value.trim().toLowerCase();
+  const all = appData.customers.filter(c =>
+    !q || c.name.toLowerCase().includes(q) || (c.company || '').toLowerCase().includes(q));
+
+  const followUps = all.filter(c => daysSince(c.lastContact) >= appData.settings.followUpDays);
+  const section = document.getElementById('followup-section');
+  section.style.display = followUps.length ? 'block' : 'none';
+  document.getElementById('followup-list').innerHTML = followUps.map(customerCard).join('');
+
+  const sorted = [...all].sort((a, b) => b.lastContact.localeCompare(a.lastContact));
+  document.getElementById('customer-list').innerHTML = sorted.map(customerCard).join('');
+  document.getElementById('empty-message').style.display =
+    appData.customers.length ? 'none' : 'block';
+}
+
+function openDetail(id) {
+  // Task 5 で実装
 }
 
 appData = loadData();
+renderHome();
+
+document.getElementById('home-search').addEventListener('input', renderHome);
 
 document.getElementById('reg-photo-input').addEventListener('change', (e) => {
   const file = e.target.files[0];
