@@ -69,3 +69,78 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = { parseDataUrl: parseDataUrl, approxBytesFromBase64: approxBytesFromBase64, buildClaudePayload: buildClaudePayload, classifyClaudeResponse: classifyClaudeResponse };
 }
 /* PURE:END */
+
+// ===== 設定（モデル・上限はここだけ変更すればよい） =====
+var CONFIG = {
+  model: 'claude-haiku-4-5',          // 精度不足なら 'claude-sonnet-4-6' 等に変更
+  maxTokens: 1024,
+  maxPerDay: 50,                      // 1日の読取上限（枚）
+  maxImageBytes: 1.5 * 1024 * 1024,   // 画像バイト上限（巨大画像を弾く）
+  anthropicVersion: '2023-06-01'
+};
+
+function props_() { return PropertiesService.getScriptProperties(); }
+
+function countKey_() {
+  return 'count_' + Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
+}
+function count_() { return Number(props_().getProperty(countKey_()) || 0); }
+function setCount_(n) { props_().setProperty(countKey_(), String(n)); }
+function remaining_() { return Math.max(0, CONFIG.maxPerDay - count_()); }
+
+function doPost(e) {
+  var res = handle_(e);
+  return ContentService.createTextOutput(JSON.stringify(res)).setMimeType(ContentService.MimeType.JSON);
+}
+
+function handle_(e) {
+  var body;
+  try { body = JSON.parse(e.postData.contents); } catch (err) { return { ok: false, error: 'parse' }; }
+
+  // 合言葉トークン照合（URL秘匿に加える第2の関門）
+  if (!body || body.secret !== props_().getProperty('APP_SECRET')) return { ok: false, error: 'auth' };
+
+  // 疎通ping（Claudeを呼ばない＝無料）
+  if (body.action === 'ping') return { ok: true, remaining: remaining_() };
+
+  // 画像チェック
+  var parsed = parseDataUrl(body.image);
+  if (!parsed) return { ok: false, error: 'bad_image' };
+  if (approxBytesFromBase64(parsed.base64) > CONFIG.maxImageBytes) return { ok: false, error: 'bad_image' };
+
+  // 1日上限（read-modify-writeをロックで保護）
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var n = count_();
+    if (n >= CONFIG.maxPerDay) return { ok: false, error: 'limit' };
+    setCount_(n + 1);
+  } finally {
+    lock.releaseLock();
+  }
+
+  // Claude API へ中継
+  var payload = buildClaudePayload(CONFIG.model, CONFIG.maxTokens, parsed.mediaType, parsed.base64);
+  var resp = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
+    method: 'post',
+    contentType: 'application/json',
+    headers: {
+      'x-api-key': props_().getProperty('ANTHROPIC_API_KEY'),
+      'anthropic-version': CONFIG.anthropicVersion
+    },
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  });
+
+  var result = classifyClaudeResponse(resp.getResponseCode(), resp.getContentText());
+  if (result.ok) result.remaining = remaining_();
+  return result;
+}
+
+// GASエディタから手動実行する結線テスト
+function testProxy() {
+  // ↓実際の名刺写真の dataURL（"data:image/jpeg;base64,...."）を貼り付けて実行
+  var SAMPLE = 'data:image/jpeg;base64,REPLACE_WITH_REAL_CARD_BASE64';
+  var fake = { postData: { contents: JSON.stringify({ image: SAMPLE, secret: props_().getProperty('APP_SECRET') }) } };
+  Logger.log(JSON.stringify(handle_(fake)));
+}
