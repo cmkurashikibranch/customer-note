@@ -204,8 +204,41 @@ function parseCard(text) {
     if (m) { result.email = m[0].replace(/[^A-Za-z]+$/, ''); used[i] = true; break; }
   }
 
-  // --- STAGE: title (Task 3) ---
-  // --- STAGE: company (Task 3) ---
+  // --- keyword 定義（title/company/name で共用） ---
+  const TITLE_KW = ['代表取締役','代表社員','代表理事','取締役','代表','会長','社長','副社長','専務','常務','部長','次長','課長','係長','主任','主査','室長','店長','施設長','管理者','園長','院長','理事長','理事','主宰','オーナー','マネージャー','ディレクター','プロデューサー','CEO','COO','CFO','CTO'];
+  const COMPANY_RE = /(株式会社|有限会社|合同会社|合資会社|合名会社|一般社団法人|一般財団法人|NPO法人|協同組合|信用金庫|信用組合|\(株\)|\(有\)|法人|組合|協会|銀行|工務店|建設|事務所|商店|商会|製作所|工房|クリニック|医院|歯科|薬局|病院|デザイン|コンサル|ファーム|カンパニー|Co\.|Inc\.|Ltd\.|LLC|K\.K\.)/;
+  const COMPANY_SUFFIX = ['店','屋','堂','庵'];
+  const DEPT_RE = /部|課|室|係|グループ|事業|営業|総務|人事|経理|開発|本部|支店|営業所/;
+
+  // --- STAGE: title ---
+  for (let i = 0; i < lines.length; i++) {
+    if (used[i]) continue;
+    const kw = TITLE_KW.find(k => lines[i].includes(k));
+    if (!kw) continue;
+    titleStr = kw;
+    let rest = lines[i];
+    TITLE_KW.forEach(k => { rest = rest.split(k).join(' '); });
+    rest = rest.trim();
+    if (rest && !DEPT_RE.test(rest)) {
+      const nm = rest.match(/[一-龥]{2,4}(?:\s[一-龥]{1,3})?|[A-Za-z]+\s[A-Za-z]+/);
+      if (nm) splitName = nm[0].replace(/\s+/g, ' ').trim();
+    }
+    used[i] = true;
+    break;
+  }
+  // --- STAGE: company ---
+  for (let i = 0; i < lines.length; i++) {
+    if (used[i]) continue;
+    if (COMPANY_RE.test(lines[i])) { result.company = lines[i].trim(); used[i] = true; break; }
+  }
+  if (!result.company) {
+    for (let i = 0; i < lines.length; i++) {
+      if (used[i]) continue;
+      if (COMPANY_SUFFIX.includes(lines[i].slice(-1)) && lines[i].length >= 3) {
+        result.company = lines[i].trim(); used[i] = true; break;
+      }
+    }
+  }
   // --- STAGE: exclude-address ---
   const addrRe = /〒|郵便番号|丁目|番地|[都道府県].{0,8}[市区町村]|[市区町村].{0,10}\d|https?:\/\/|www\./;
   for (let i = 0; i < lines.length; i++) {
@@ -244,7 +277,28 @@ function parseCard(text) {
       memoNums.forEach(n => extraMemo.push(n));
     }
   }
-  // --- STAGE: name (Task 3) ---
+  // --- STAGE: name ---
+  if (splitName) {
+    result.name = splitName;
+  } else {
+    let bestScore = -Infinity, bestIdx = -1, bestVal = '';
+    for (let i = 0; i < lines.length; i++) {
+      if (used[i]) continue;
+      const l = lines[i];
+      if (/\d/.test(l)) continue;
+      if (COMPANY_RE.test(l)) continue;
+      if (TITLE_KW.some(k => l.includes(k))) continue;
+      const noSpace = l.replace(/\s/g, '');
+      let score = 0;
+      if (/[一-龥]/.test(l)) score += 2;
+      if (/^[ぁ-ん\s]+$/.test(l)) score -= 1;
+      if (/^[A-Za-z]+\s[A-Za-z]+$/.test(l)) score += 1;
+      if (noSpace.length >= 2 && noSpace.length <= 6) score += 1;
+      if (/^[一-龥]{1,4}\s[一-龥]{1,4}$/.test(l)) score += 1;
+      if (score > bestScore) { bestScore = score; bestIdx = i; bestVal = l.replace(/\s+/g, ' ').trim(); }
+    }
+    if (bestScore >= 1) { result.name = bestVal; used[bestIdx] = true; }
+  }
 
   // --- assemble memo ---
   const memoParts = [];
