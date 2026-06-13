@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>お客様ノート</title>
+<style>
+  :root {
+    --bg: #F8FAFC;
+    --card: #FFFFFF;
+    --accent: #2563EB;
+    --accent-soft: #EFF6FF;
+    --text: #0F172A;
+    --text-2: #64748B;
+    --radius: 16px;
+    --shadow: 0 1px 3px rgba(15,23,42,0.08);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 16px;
+    padding-bottom: 90px;
+  }
+  h1 { font-size: 20px; margin-bottom: 16px; }
+  .view { display: none; }
+  .view.active { display: block; }
+  .card {
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 14px 16px;
+    margin-bottom: 10px;
+  }
+  .btn {
+    display: inline-block;
+    border: none;
+    border-radius: 12px;
+    padding: 12px 20px;
+    font-size: 15px;
+    cursor: pointer;
+    background: var(--accent);
+    color: #fff;
+  }
+  .btn-ghost {
+    background: transparent;
+    color: var(--text-2);
+    border: 1px solid #E2E8F0;
+  }
+  .back-link {
+    color: var(--text-2);
+    cursor: pointer;
+    font-size: 14px;
+    margin-bottom: 12px;
+    display: inline-block;
+  }
+  .field-label { display:block; font-size:12px; color:var(--text-2); margin:10px 0 4px; }
+  .field-input {
+    width:100%; padding:10px 12px; font-size:15px;
+    border:1px solid #E2E8F0; border-radius:10px;
+    background:#FBFCFE; color:var(--text);
+  }
+  .field-input:focus { outline:2px solid var(--accent); border-color:transparent; }
+  #fab {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    box-shadow: 0 4px 12px rgba(37,99,235,0.35); z-index: 10;
+  }
+  .cust-row { display:flex; align-items:center; gap:12px; cursor:pointer; }
+  .cust-thumb {
+    width:48px; height:48px; border-radius:10px; object-fit:cover;
+    background:var(--accent-soft); flex-shrink:0;
+    display:flex; align-items:center; justify-content:center; font-size:20px;
+  }
+  .cust-name { font-size:15px; font-weight:600; }
+  .cust-sub { font-size:12px; color:var(--text-2); }
+  .paste-actions { display:flex; gap:8px; align-items:center; margin-top:8px; }
+  .btn-sm { padding:8px 14px; font-size:13px; }
+  #reg-paste-status { display:none; margin-top:8px; font-size:13px; color:var(--accent); white-space:pre-line; line-height:1.5; }
+  .paste-help { margin-top:8px; font-size:12px; color:var(--text-2); }
+  .paste-help summary { cursor:pointer; }
+  .field-input.guessed { border-color:var(--accent); border-style:dashed; }
+  .guess-tag { font-size:11px; color:var(--accent); margin-left:6px; display:none; }
+  .guess-tag.on { display:inline; }
+</style>
+</head>
+<body>
+
+<div id="view-home" class="view active">
+  <h1>お客様ノート</h1>
+  <input type="search" id="home-search" class="field-input" placeholder="🔍 名前・会社で検索" style="margin-bottom:14px;">
+  <div id="followup-section" style="display:none;">
+    <div style="font-size:13px; color:var(--accent); margin-bottom:6px;">💬 そろそろ連絡しませんか？</div>
+    <div id="followup-list" style="border:1.5px solid var(--accent-soft); background:var(--accent-soft); border-radius:var(--radius); padding:8px; margin-bottom:16px;"></div>
+  </div>
+  <div style="font-size:13px; color:var(--text-2); margin-bottom:6px;">みなさん</div>
+  <div id="customer-list"></div>
+  <div id="empty-message" style="display:none; text-align:center; color:var(--text-2); padding:40px 0;">
+    まだ登録がありません。<br>下のボタンから名刺を撮ってみましょう。
+  </div>
+  <button class="btn" id="fab" onclick="showView('register')">📷 名刺を撮る</button>
+</div>
+
+<div id="view-register" class="view">
+  <span class="back-link" onclick="showView('home')">← もどる</span>
+  <h1>お客様を登録</h1>
+  <div class="card" style="text-align:center;">
+    <img id="reg-photo-preview" style="display:none; width:100%; border-radius:12px; margin-bottom:8px;">
+    <label class="btn btn-ghost" style="display:block;">
+      📷 名刺を撮る・選ぶ
+      <input type="file" id="reg-photo-input" accept="image/*" capture="environment" style="display:none;">
+    </label>
+  </div>
+  <div class="card">
+    <label class="field-label">名刺の文字を貼り付け（スマホのOCRでコピー）</label>
+    <textarea id="reg-paste" class="field-input" rows="4"
+      placeholder="スマホで名刺の文字をコピーして、ここに長押し→ペースト"
+      autocapitalize="off" autocomplete="off" spellcheck="false"></textarea>
+    <div class="paste-actions">
+      <button class="btn btn-sm" onclick="runParse()">✨ 読み取る</button>
+      <button class="btn btn-ghost btn-sm" onclick="clearPaste()">クリア</button>
+    </div>
+    <div id="reg-paste-status" aria-live="polite"></div>
+    <details class="paste-help">
+      <summary>コピーのやり方（iPhone / Android）</summary>
+      iPhone：写真アプリで名刺を開き、文字を長押し→「すべて選択」→コピー。<br>
+      Android：Googleレンズで名刺を写し、テキストを選択→コピー。<br>
+      その後この欄を長押し→ペーストして［読み取る］。
+    </details>
+  </div>
+  <div class="card">
+    <label class="field-label">お名前 *</label>
+    <input type="text" id="reg-name" class="field-input" placeholder="山田 太郎"><span id="reg-name-guess" class="guess-tag">推測</span>
+    <label class="field-label">会社・屋号</label>
+    <input type="text" id="reg-company" class="field-input"><span id="reg-company-guess" class="guess-tag">推測</span>
+    <label class="field-label">電話番号</label>
+    <input type="tel" id="reg-phone" class="field-input">
+    <label class="field-label">メール</label>
+    <input type="email" id="reg-email" class="field-input">
+    <label class="field-label">メモ（役職・住所・出会った場所など）</label>
+    <textarea id="reg-note" class="field-input" rows="4"></textarea>
+  </div>
+  <button class="btn" style="width:100%;" onclick="saveCustomer()">保存する</button>
+</div>
+
+<div id="view-detail" class="view">
+  <span class="back-link" onclick="showView('home')">← もどる</span>
+  <div id="detail-content"></div>
+  <div id="photo-modal" onclick="this.style.display='none'"
+    style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.9); z-index:100; align-items:center; justify-content:center; padding:16px;">
+    <img id="photo-modal-img" style="max-width:100%; max-height:90vh; border-radius:8px;">
+  </div>
+</div>
+
+<script>
+const STORAGE_KEY = 'customer-note-v1';
+
+const DEFAULT_DATA = {
+  customers: [],
+  settings: { followUpDays: 14 },
+  nextId: 1
+};
+
+let appData = null;
+
+function loadData() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return structuredClone(DEFAULT_DATA);
+    const parsed = JSON.parse(raw);
+    const data = Object.assign(structuredClone(DEFAULT_DATA), parsed);
+    data.settings = Object.assign(structuredClone(DEFAULT_DATA.settings), parsed.settings);
+    if (!Array.isArray(data.customers)) data.customers = [];
+    if (typeof data.nextId !== 'number') data.nextId = data.customers.length + 1;
+    return data;
+  } catch (e) {
+    console.error('loadData failed', e);
+    return structuredClone(DEFAULT_DATA);
+  }
+}
+
+function saveData() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
+    return true;
+  } catch (e) {
+    // QuotaExceededError 等
+    alert('保存に失敗しました。容量がいっぱいの可能性があります。古いお客様の写真を削除してください。');
+    return false;
+  }
+}
+
+function todayStr() {
+  const d = new Date();
+  return d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0');
+}
+
+/* PARSER:START */
+function parseCard(text) {
+  text = String(text == null ? '' : text);
+  if (text.length > 5000) text = text.slice(0, 5000);
+
+  // --- 正規化（全角→半角） ---
+  const norm = text
+    .replace(/[Ａ-Ｚａ-ｚ０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+    .replace(/＠/g, '@')
+    .replace(/．/g, '.')
+    .replace(/[ー－–‐―−]/g, '-')
+    .replace(/℡/g, 'TEL')
+    .replace(/（/g, '(').replace(/）/g, ')')
+    .replace(/　/g, ' ');
+
+  const lines = norm.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+  const used = lines.map(() => false);
+  const extraMemo = [];
+  const result = { name: '', company: '', phone: '', email: '', memo: '' };
+  let titleStr = '';
+  let splitName = '';
+
+  // --- STAGE: email ---
+  const emailRe = /[\w.%+-]+@[\w-]+(?:\.[\w-]+)+/;
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(emailRe);
+    if (m) { result.email = m[0].replace(/[^A-Za-z]+$/, ''); used[i] = true; break; }
+  }
+
+  // --- keyword 定義（title/company/name で共用） ---
+  const TITLE_KW = ['代表取締役','代表社員','代表理事','取締役','代表','会長','社長','副社長','専務','常務','部長','次長','課長','係長','主任','主査','室長','店長','施設長','管理者','園長','院長','理事長','理事','主宰','オーナー','マネージャー','ディレクター','プロデューサー','CEO','COO','CFO','CTO'];
+  const COMPANY_RE = /(株式会社|有限会社|合同会社|合資会社|合名会社|一般社団法人|一般財団法人|NPO法人|協同組合|信用金庫|信用組合|\(株\)|\(有\)|法人|組合|協会|銀行|工務店|建設|事務所|商店|商会|製作所|工房|クリニック|医院|歯科|薬局|病院|デザイン|コンサル|ファーム|カンパニー|Co\.|Inc\.|Ltd\.|LLC|K\.K\.)/;
+  const COMPANY_SUFFIX = ['店','屋','堂','庵'];
+  const DEPT_RE = /部|課|室|係|グループ|事業|営業|総務|人事|経理|開発|本部|支店|営業所/;
+
+  // --- STAGE: title ---
+  for (let i = 0; i < lines.length; i++) {
+    if (used[i]) continue;
+    const kw = TITLE_KW.find(k => lines[i].includes(k));
+    if (!kw) continue;
+    titleStr = kw;
+    let rest = lines[i];
+    TITLE_KW.forEach(k => { rest = rest.split(k).join(' '); });
+    rest = rest.trim();
+    if (rest && !DEPT_RE.test(rest)) {
+      const nm = rest.match(/[一-龥]{2,4}(?:\s[一-龥]{1,3})?|[A-Za-z]+\s[A-Za-z]+/);
+      if (nm) splitName = nm[0].replace(/\s+/g, ' ').trim();
+    }
+    used[i] = true;
+    break;
+  }
+  // --- STAGE: company ---
+  for (let i = 0; i < lines.length; i++) {
+    if (used[i]) continue;
+    if (COMPANY_RE.test(lines[i])) { result.company = lines[i].trim(); used[i] = true; break; }
+  }
+  if (!result.company) {
+    for (let i = 0; i < lines.length; i++) {
+      if (used[i]) continue;
+      if (COMPANY_SUFFIX.includes(lines[i].slice(-1)) && lines[i].length >= 3) {
+        result.company = lines[i].trim(); used[i] = true; break;
+      }
+    }
+  }
+  // --- STAGE: exclude-address ---
+  const addrRe = /〒|郵便番号|丁目|番地|[都道府県].{0,8}[市区町村]|[市区町村].{0,10}\d|https?:\/\/|www\./;
+  for (let i = 0; i < lines.length; i++) {
+    if (used[i]) continue;
+    if (addrRe.test(lines[i])) { extraMemo.push(lines[i]); used[i] = true; }
+  }
+  // --- STAGE: phone-fax ---
+  function formatPhone(tok) {
+    if (!/\+81/.test(tok) && /-/.test(tok)) {
+      return tok.replace(/[()\s]+/g, '').replace(/[^\d-]/g, '').replace(/-+/g, '-').replace(/^-+|-+$/g, '');
+    }
+    const d = tok.replace(/[^\d]/g, '').replace(/^81/, '0');
+    if (/^(070|080|090)\d{8}$/.test(d)) return d.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3');
+    if (/^(0120|0800)\d{6}$/.test(d)) return d.replace(/(\d{4})(\d{3})(\d{3})/, '$1-$2-$3');
+    return d;
+  }
+  const phoneTok = /(?:\+81|0)[\d\-()\s]{7,13}\d/g;
+  for (let i = 0; i < lines.length; i++) {
+    if (used[i]) continue;
+    const line = lines[i];
+    const toks = line.match(phoneTok);
+    if (!toks) continue;
+    let lineHadTel = false;
+    const memoNums = [];
+    for (const tok of toks) {
+      const digits = tok.replace(/[^\d]/g, '').replace(/^81/, '0');
+      if (!/^0\d{9,10}$/.test(digits)) continue;
+      const before = line.slice(0, line.indexOf(tok));
+      const isFax = /FAX|ファ?ックス/i.test(before) && !/TEL|電話|携帯/i.test(before.slice(-6));
+      const formatted = formatPhone(tok);
+      if (!isFax && !result.phone) { result.phone = formatted; lineHadTel = true; }
+      else { memoNums.push(isFax ? 'FAX ' + formatted : formatted); }
+    }
+    if (lineHadTel || memoNums.length) {
+      used[i] = true;
+      memoNums.forEach(n => extraMemo.push(n));
+    }
+  }
+  // --- STAGE: name ---
+  if (splitName) {
+    result.name = splitName;
+  } else {
+    let bestScore = -Infinity, bestIdx = -1, bestVal = '';
+    for (let i = 0; i < lines.length; i++) {
+      if (used[i]) continue;
+      const l = lines[i];
+      if (/\d/.test(l)) continue;
+      if (COMPANY_RE.test(l)) continue;
+      if (TITLE_KW.some(k => l.includes(k))) continue;
+      const noSpace = l.replace(/\s/g, '');
+      let score = 0;
+      if (/[一-龥]/.test(l)) score += 2;
+      if (/^[ぁ-ん\s]+$/.test(l)) score -= 1;
+      if (/^[A-Za-z]+\s[A-Za-z]+$/.test(l)) score += 1;
+      if (noSpace.length >= 2 && noSpace.length <= 6) score += 1;
+      if (/^[一-龥]{1,4}\s[一-龥]{1,4}$/.test(l)) score += 1;
+      if (score > bestScore) { bestScore = score; bestIdx = i; bestVal = l.replace(/\s+/g, ' ').trim(); }
+    }
+    if (bestScore >= 1) { result.name = bestVal; used[bestIdx] = true; }
+  }
+
+  // --- assemble memo ---
+  const memoParts = [];
+  if (titleStr) memoParts.push('役職：' + titleStr);
+  for (const m of extraMemo) memoParts.push(m);
+  for (let i = 0; i < lines.length; i++) if (!used[i]) memoParts.push(lines[i]);
+  result.memo = memoParts.join('\n');
+
+  return result;
+}
+if (typeof module !== 'undefined' && module.exports) module.exports = { parseCard };
+/* PARSER:END */
+
+function setGuess(fieldId, on) {
+  const input = document.getElementById(fieldId);
+  const tag = document.getElementById(fieldId + '-guess');
+  if (on) { input.classList.add('guessed'); if (tag) tag.classList.add('on'); }
+  else { input.classList.remove('guessed'); if (tag) tag.classList.remove('on'); }
+}
+
+function runParse() {
+  const ta = document.getElementById('reg-paste');
+  if (!ta.value.trim()) { alert('貼り付け欄が空です'); return; }
+  const ids = ['reg-name','reg-company','reg-phone','reg-email','reg-note'];
+  const hasContent = ids.some(id => document.getElementById(id).value.trim());
+  if (hasContent && !confirm('入力済みの内容を読み取り結果で置き換えますか？')) return;
+  const p = parseCard(ta.value);
+  if (p.name)    { document.getElementById('reg-name').value = p.name; setGuess('reg-name', true); }
+  if (p.company) { document.getElementById('reg-company').value = p.company; setGuess('reg-company', true); }
+  if (p.phone)   { document.getElementById('reg-phone').value = p.phone; }
+  if (p.email)   { document.getElementById('reg-email').value = p.email; }
+  if (p.memo) {
+    const note = document.getElementById('reg-note');
+    const existing = note.value.split('\n').map(s => s.trim()).filter(Boolean);
+    p.memo.split('\n').map(s => s.trim()).filter(Boolean)
+      .forEach(line => { if (!existing.includes(line)) existing.push(line); });
+    note.value = existing.join('\n');
+  }
+  let msg = '✨ 読み取りました。電話とメールはそのまま、お名前と会社は念のため確認してくださいね';
+  if (!p.phone && !p.email) msg += '\n（電話・メールは見つかりませんでした。手で入れてくださいね）';
+  if (!p.name) msg += '\n（お名前は読み取れませんでした。上の欄にご記入を）';
+  const st = document.getElementById('reg-paste-status');
+  st.textContent = msg; st.style.display = 'block';
+}
+
+function clearPaste() {
+  document.getElementById('reg-paste').value = '';
+  ['reg-name','reg-company','reg-phone','reg-email','reg-note'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  setGuess('reg-name', false); setGuess('reg-company', false);
+  const st = document.getElementById('reg-paste-status');
+  st.style.display = 'none'; st.textContent = '';
+}
+
+function showView(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-' + name).classList.add('active');
+  window.scrollTo(0, 0);
+}
+
+let regPhotoData = null; // base64 or null
+let regPhotoBusy = false;
+
+function resizeImage(file, callback, onFail) {
+  const img = new Image();
+  const url = URL.createObjectURL(file);
+  img.onload = () => {
+    URL.revokeObjectURL(url);
+    const MAX = 800;
+    let { width, height } = img;
+    if (Math.max(width, height) > MAX) {
+      const scale = MAX / Math.max(width, height);
+      width = Math.round(width * scale);
+      height = Math.round(height * scale);
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+    callback(canvas.toDataURL('image/jpeg', 0.7));
+  };
+  img.onerror = () => {
+    URL.revokeObjectURL(url);
+    alert('画像を読み込めませんでした');
+    if (onFail) onFail();
+  };
+  img.src = url;
+}
+
+function resetRegisterForm() {
+  regPhotoData = null;
+  const prev = document.getElementById('reg-photo-preview');
+  prev.style.display = 'none';
+  prev.src = '';
+  ['reg-name','reg-company','reg-phone','reg-email','reg-note'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('reg-photo-input').value = '';
+  document.getElementById('reg-paste').value = '';
+  setGuess('reg-name', false); setGuess('reg-company', false);
+  const _st = document.getElementById('reg-paste-status');
+  _st.style.display = 'none'; _st.textContent = '';
+}
+
+function saveCustomer() {
+  if (regPhotoBusy) { alert('写真を処理中です。少し待ってからもう一度押してください。'); return; }
+  const name = document.getElementById('reg-name').value.trim();
+  if (!name) { alert('お名前を入力してください'); return; }
+  const note = document.getElementById('reg-note').value.trim();
+  const customer = {
+    id: appData.nextId++,
+    name,
+    company: document.getElementById('reg-company').value.trim(),
+    phone: document.getElementById('reg-phone').value.trim(),
+    email: document.getElementById('reg-email').value.trim(),
+    photo: regPhotoData,
+    lastContact: todayStr(),
+    history: [{ date: todayStr(), note: note || '登録' }]
+  };
+  appData.customers.push(customer);
+  if (!saveData()) { appData.customers.pop(); appData.nextId--; return; }
+  const used = JSON.stringify(appData).length;
+  if (used > 4 * 1024 * 1024) {
+    alert('保存容量が残りわずかです（約' + Math.round(used / 1024 / 1024 * 10) / 10 + 'MB使用中）。古いお客様を削除すると空きが増えます。');
+  }
+  resetRegisterForm();
+  renderHome();
+  showView('home');
+}
+
+function daysSince(dateStr) {
+  return Math.floor((new Date(todayStr()) - new Date(dateStr)) / 86400000);
+}
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, m =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+function customerCard(c) {
+  const thumb = c.photo
+    ? `<img class="cust-thumb" src="${c.photo}" alt="">`
+    : `<div class="cust-thumb">👤</div>`;
+  const days = daysSince(c.lastContact);
+  const sub = [c.company, days === 0 ? '今日連絡' : days + '日前に連絡'].filter(Boolean).join('・');
+  return `<div class="card cust-row" onclick="openDetail(${c.id})">
+    ${thumb}
+    <div><div class="cust-name">${escapeHtml(c.name)}さん</div>
+    <div class="cust-sub">${escapeHtml(sub)}</div></div>
+  </div>`;
+}
+
+function renderHome() {
+  const q = document.getElementById('home-search').value.trim().toLowerCase();
+  const all = appData.customers.filter(c =>
+    !q || c.name.toLowerCase().includes(q) || (c.company || '').toLowerCase().includes(q));
+
+  const followUps = all.filter(c => daysSince(c.lastContact) >= appData.settings.followUpDays);
+  const section = document.getElementById('followup-section');
+  section.style.display = followUps.length ? 'block' : 'none';
+  document.getElementById('followup-list').innerHTML = followUps.map(customerCard).join('');
+
+  const sorted = [...all].sort((a, b) => b.lastContact.localeCompare(a.lastContact));
+  document.getElementById('customer-list').innerHTML = sorted.map(customerCard).join('');
+  document.getElementById('empty-message').style.display =
+    appData.customers.length ? 'none' : 'block';
+}
+
+let detailId = null;
+
+function openDetail(id) {
+  detailId = id;
+  renderDetail();
+  showView('detail');
+}
+
+function renderDetail() {
+  const c = appData.customers.find(x => x.id === detailId);
+  if (!c) { showView('home'); return; }
+  const photo = c.photo
+    ? `<img src="${c.photo}" onclick="openPhotoModal()" style="width:100%; border-radius:12px; cursor:zoom-in;">`
+    : '';
+  const contacts = [
+    c.phone ? `<a class="btn btn-ghost" href="tel:${escapeHtml(c.phone)}">📞 電話する</a>` : '',
+    c.email ? `<a class="btn btn-ghost" href="mailto:${escapeHtml(c.email)}">✉️ メールする</a>` : ''
+  ].filter(Boolean).join(' ');
+  const history = [...c.history].reverse().map(h =>
+    `<div style="padding:8px 0; border-bottom:1px solid #F1F5F9;">
+      <div style="font-size:12px; color:var(--text-2);">${h.date}</div>
+      <div style="font-size:14px; white-space:pre-wrap;">${escapeHtml(h.note)}</div>
+    </div>`).join('');
+  document.getElementById('detail-content').innerHTML = `
+    <div class="card">
+      ${photo}
+      <h1 style="margin:10px 0 2px;">${escapeHtml(c.name)}さん</h1>
+      <div class="cust-sub">${escapeHtml(c.company || '')}</div>
+      <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">${contacts}</div>
+    </div>
+    <button class="btn" style="width:100%; margin-bottom:10px;" onclick="markContacted()">✅ 連絡した</button>
+    <div class="card">
+      <div style="font-size:13px; color:var(--text-2); margin-bottom:4px;">やりとり履歴</div>
+      ${history || '<div class="cust-sub">まだ履歴がありません</div>'}
+    </div>
+    <button class="btn btn-ghost" style="width:100%; margin-top:6px;" onclick="deleteCustomer()">このお客様を削除</button>`;
+}
+
+function openPhotoModal() {
+  const c = appData.customers.find(x => x.id === detailId);
+  if (!c || !c.photo) return;
+  document.getElementById('photo-modal-img').src = c.photo;
+  document.getElementById('photo-modal').style.display = 'flex';
+}
+
+function markContacted() {
+  const c = appData.customers.find(x => x.id === detailId);
+  if (!c) return;
+  const note = prompt('どんなやりとりでしたか？（空欄でもOK）');
+  if (note === null) return; // キャンセル
+  c.history.push({ date: todayStr(), note: note.trim() || '連絡した' });
+  c.lastContact = todayStr();
+  saveData();
+  renderDetail();
+  renderHome();
+}
+
+function deleteCustomer() {
+  const c = appData.customers.find(x => x.id === detailId);
+  if (!c) return;
+  if (!confirm(c.name + 'さんを削除します。よろしいですか？')) return;
+  appData.customers = appData.customers.filter(x => x.id !== detailId);
+  saveData();
+  renderHome();
+  showView('home');
+}
+
+appData = loadData();
+renderHome();
+
+document.getElementById('home-search').addEventListener('input', renderHome);
+
+['reg-name','reg-company'].forEach(id => {
+  document.getElementById(id).addEventListener('input', () => setGuess(id, false));
+});
+
+document.getElementById('reg-photo-input').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  regPhotoBusy = true;
+  resizeImage(file, (dataUrl) => {
+    regPhotoData = dataUrl;
+    const prev = document.getElementById('reg-photo-preview');
+    prev.src = dataUrl;
+    prev.style.display = 'block';
+    regPhotoBusy = false;
+  }, () => {
+    regPhotoData = null;
+    const prev = document.getElementById('reg-photo-preview');
+    prev.style.display = 'none';
+    prev.src = '';
+    e.target.value = '';
+    regPhotoBusy = false;
+  });
+});
+</script>
+</body>
+</html>
