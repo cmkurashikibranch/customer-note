@@ -76,6 +76,14 @@
   }
   .cust-name { font-size:15px; font-weight:600; }
   .cust-sub { font-size:12px; color:var(--text-2); }
+  .paste-actions { display:flex; gap:8px; align-items:center; margin-top:8px; }
+  .btn-sm { padding:8px 14px; font-size:13px; }
+  #reg-paste-status { display:none; margin-top:8px; font-size:13px; color:var(--accent); white-space:pre-line; line-height:1.5; }
+  .paste-help { margin-top:8px; font-size:12px; color:var(--text-2); }
+  .paste-help summary { cursor:pointer; }
+  .field-input.guessed { border-color:var(--accent); border-style:dashed; }
+  .guess-tag { font-size:11px; color:var(--accent); margin-left:6px; display:none; }
+  .guess-tag.on { display:inline; }
 </style>
 </head>
 <body>
@@ -104,19 +112,35 @@
       📷 名刺を撮る・選ぶ
       <input type="file" id="reg-photo-input" accept="image/*" capture="environment" style="display:none;">
     </label>
-    <!-- 将来のOCR/AIボタン差し込み位置 -->
+  </div>
+  <div class="card">
+    <label class="field-label">名刺の文字を貼り付け（スマホのOCRでコピー）</label>
+    <textarea id="reg-paste" class="field-input" rows="4"
+      placeholder="スマホで名刺の文字をコピーして、ここに長押し→ペースト"
+      autocapitalize="off" autocomplete="off" spellcheck="false"></textarea>
+    <div class="paste-actions">
+      <button class="btn btn-sm" onclick="runParse()">✨ 読み取る</button>
+      <button class="btn btn-ghost btn-sm" onclick="clearPaste()">クリア</button>
+    </div>
+    <div id="reg-paste-status" aria-live="polite"></div>
+    <details class="paste-help">
+      <summary>コピーのやり方（iPhone / Android）</summary>
+      iPhone：写真アプリで名刺を開き、文字を長押し→「すべて選択」→コピー。<br>
+      Android：Googleレンズで名刺を写し、テキストを選択→コピー。<br>
+      その後この欄を長押し→ペーストして［読み取る］。
+    </details>
   </div>
   <div class="card">
     <label class="field-label">お名前 *</label>
-    <input type="text" id="reg-name" class="field-input" placeholder="山田 太郎">
+    <input type="text" id="reg-name" class="field-input" placeholder="山田 太郎"><span id="reg-name-guess" class="guess-tag">推測</span>
     <label class="field-label">会社・屋号</label>
-    <input type="text" id="reg-company" class="field-input">
+    <input type="text" id="reg-company" class="field-input"><span id="reg-company-guess" class="guess-tag">推測</span>
     <label class="field-label">電話番号</label>
     <input type="tel" id="reg-phone" class="field-input">
     <label class="field-label">メール</label>
     <input type="email" id="reg-email" class="field-input">
-    <label class="field-label">メモ（出会った場所など）</label>
-    <textarea id="reg-note" class="field-input" rows="2"></textarea>
+    <label class="field-label">メモ（役職・住所・出会った場所など）</label>
+    <textarea id="reg-note" class="field-input" rows="4"></textarea>
   </div>
   <button class="btn" style="width:100%;" onclick="saveCustomer()">保存する</button>
 </div>
@@ -312,6 +336,48 @@ function parseCard(text) {
 if (typeof module !== 'undefined' && module.exports) module.exports = { parseCard };
 /* PARSER:END */
 
+function setGuess(fieldId, on) {
+  const input = document.getElementById(fieldId);
+  const tag = document.getElementById(fieldId + '-guess');
+  if (on) { input.classList.add('guessed'); if (tag) tag.classList.add('on'); }
+  else { input.classList.remove('guessed'); if (tag) tag.classList.remove('on'); }
+}
+
+function runParse() {
+  const ta = document.getElementById('reg-paste');
+  if (!ta.value.trim()) { alert('貼り付け欄が空です'); return; }
+  const ids = ['reg-name','reg-company','reg-phone','reg-email','reg-note'];
+  const hasContent = ids.some(id => document.getElementById(id).value.trim());
+  if (hasContent && !confirm('入力済みの内容を読み取り結果で置き換えますか？')) return;
+  const p = parseCard(ta.value);
+  if (p.name)    { document.getElementById('reg-name').value = p.name; setGuess('reg-name', true); }
+  if (p.company) { document.getElementById('reg-company').value = p.company; setGuess('reg-company', true); }
+  if (p.phone)   { document.getElementById('reg-phone').value = p.phone; }
+  if (p.email)   { document.getElementById('reg-email').value = p.email; }
+  if (p.memo) {
+    const note = document.getElementById('reg-note');
+    const existing = note.value.split('\n').map(s => s.trim()).filter(Boolean);
+    p.memo.split('\n').map(s => s.trim()).filter(Boolean)
+      .forEach(line => { if (!existing.includes(line)) existing.push(line); });
+    note.value = existing.join('\n');
+  }
+  let msg = '✨ 読み取りました。電話とメールはそのまま、お名前と会社は念のため確認してくださいね';
+  if (!p.phone && !p.email) msg += '\n（電話・メールは見つかりませんでした。手で入れてくださいね）';
+  if (!p.name) msg += '\n（お名前は読み取れませんでした。上の欄にご記入を）';
+  const st = document.getElementById('reg-paste-status');
+  st.textContent = msg; st.style.display = 'block';
+}
+
+function clearPaste() {
+  document.getElementById('reg-paste').value = '';
+  ['reg-name','reg-company','reg-phone','reg-email','reg-note'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  setGuess('reg-name', false); setGuess('reg-company', false);
+  const st = document.getElementById('reg-paste-status');
+  st.style.display = 'none'; st.textContent = '';
+}
+
 function showView(name) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.getElementById('view-' + name).classList.add('active');
@@ -356,6 +422,10 @@ function resetRegisterForm() {
     document.getElementById(id).value = '';
   });
   document.getElementById('reg-photo-input').value = '';
+  document.getElementById('reg-paste').value = '';
+  setGuess('reg-name', false); setGuess('reg-company', false);
+  const _st = document.getElementById('reg-paste-status');
+  _st.style.display = 'none'; _st.textContent = '';
 }
 
 function saveCustomer() {
@@ -493,6 +563,10 @@ appData = loadData();
 renderHome();
 
 document.getElementById('home-search').addEventListener('input', renderHome);
+
+['reg-name','reg-company'].forEach(id => {
+  document.getElementById(id).addEventListener('input', () => setGuess(id, false));
+});
 
 document.getElementById('reg-photo-input').addEventListener('change', (e) => {
   const file = e.target.files[0];
