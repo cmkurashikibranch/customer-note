@@ -238,6 +238,10 @@ function saveCustomer() {
   };
   appData.customers.push(customer);
   if (!saveData()) { appData.customers.pop(); appData.nextId--; return; }
+  const used = JSON.stringify(appData).length;
+  if (used > 4 * 1024 * 1024) {
+    alert('保存容量が残りわずかです（約' + Math.round(used / 1024 / 1024 * 10) / 10 + 'MB使用中）。古いお客様を削除すると空きが増えます。');
+  }
   resetRegisterForm();
   renderHome();
   showView('home');
