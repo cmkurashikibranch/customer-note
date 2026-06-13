@@ -175,6 +175,53 @@ function todayStr() {
     String(d.getDate()).padStart(2, '0');
 }
 
+/* PARSER:START */
+function parseCard(text) {
+  text = String(text == null ? '' : text);
+  if (text.length > 5000) text = text.slice(0, 5000);
+
+  // --- 正規化（全角→半角） ---
+  const norm = text
+    .replace(/[Ａ-Ｚａ-ｚ０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+    .replace(/＠/g, '@')
+    .replace(/．/g, '.')
+    .replace(/[ー－‐―−]/g, '-')
+    .replace(/℡/g, 'TEL')
+    .replace(/（/g, '(').replace(/）/g, ')')
+    .replace(/　/g, ' ');
+
+  const lines = norm.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+  const used = lines.map(() => false);
+  const extraMemo = [];
+  const result = { name: '', company: '', phone: '', email: '', memo: '' };
+  let titleStr = '';
+  let splitName = '';
+
+  // --- STAGE: email ---
+  const emailRe = /[\w.%+-]+@[\w-]+(?:\.[\w-]+)+/;
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(emailRe);
+    if (m) { result.email = m[0].replace(/[^A-Za-z]+$/, ''); used[i] = true; break; }
+  }
+
+  // --- STAGE: title (Task 3) ---
+  // --- STAGE: company (Task 3) ---
+  // --- STAGE: exclude-address (Task 2) ---
+  // --- STAGE: phone-fax (Task 2) ---
+  // --- STAGE: name (Task 3) ---
+
+  // --- assemble memo ---
+  const memoParts = [];
+  if (titleStr) memoParts.push('役職：' + titleStr);
+  for (const m of extraMemo) memoParts.push(m);
+  for (let i = 0; i < lines.length; i++) if (!used[i]) memoParts.push(lines[i]);
+  result.memo = memoParts.join('\n');
+
+  return result;
+}
+if (typeof module !== 'undefined' && module.exports) module.exports = { parseCard };
+/* PARSER:END */
+
 function showView(name) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.getElementById('view-' + name).classList.add('active');
