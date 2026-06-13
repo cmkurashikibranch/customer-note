@@ -513,7 +513,7 @@ function renderDetail() {
   const history = [...c.history].reverse().map(h =>
     `<div style="padding:8px 0; border-bottom:1px solid #F1F5F9;">
       <div style="font-size:12px; color:var(--text-2);">${h.date}</div>
-      <div style="font-size:14px;">${escapeHtml(h.note)}</div>
+      <div style="font-size:14px; white-space:pre-wrap;">${escapeHtml(h.note)}</div>
     </div>`).join('');
   document.getElementById('detail-content').innerHTML = `
     <div class="card">
