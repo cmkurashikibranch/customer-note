@@ -145,3 +145,7 @@ test('英語のみ名刺：email/company は拾い、落ちない', () => {
   assert.strictEqual(r.email, 'info@yamada.com');
   assert.ok(r.company.includes('Inc.'));
 });
+
+test('EN DASH（–/U+2013）区切りの電話も正規化', () => {
+  assert.strictEqual(parseCard('090–1234–5678').phone, '090-1234-5678');
+});
