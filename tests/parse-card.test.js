@@ -40,3 +40,41 @@ test('冪等：同じ入力なら同じ出力', () => {
   const input = 'info@example.co.jp\nなにかの行';
   assert.deepStrictEqual(parseCard(input), parseCard(input));
 });
+
+test('携帯番号を phone に', () => {
+  assert.strictEqual(parseCard('090-1234-5678').phone, '090-1234-5678');
+});
+
+test('固定電話（ハイフン付き）は元の区切りを保つ', () => {
+  assert.strictEqual(parseCard('TEL 086-426-1111').phone, '086-426-1111');
+});
+
+test('全角数字の電話を正規化して抽出', () => {
+  assert.strictEqual(parseCard('ＴＥＬ　０９０－１２３４－５６７８').phone, '090-1234-5678');
+});
+
+test('℡ 記号を TEL とみなす', () => {
+  assert.strictEqual(parseCard('℡ 086-426-1111').phone, '086-426-1111');
+});
+
+test('+81 形式を 0 始まりに正規化', () => {
+  assert.strictEqual(parseCard('+81-90-1234-5678').phone, '090-1234-5678');
+});
+
+test('同一行の TEL/FAX は TEL を採用し FAX はメモへ', () => {
+  const r = parseCard('TEL 086-426-1111 FAX 086-426-2222');
+  assert.strictEqual(r.phone, '086-426-1111');
+  assert.ok(r.memo.includes('086-426-2222'), 'memo に FAX 番号が残る');
+});
+
+test('FAX のみの行は phone を空にしメモへ', () => {
+  const r = parseCard('FAX 086-426-2222');
+  assert.strictEqual(r.phone, '');
+  assert.ok(r.memo.includes('086-426-2222'));
+});
+
+test('〒＋番地の住所行は電話に化けず memo へ', () => {
+  const r = parseCard('〒700-0000 岡山県倉敷市青葉町1-2-3');
+  assert.strictEqual(r.phone, '');
+  assert.ok(r.memo.includes('倉敷市'));
+});

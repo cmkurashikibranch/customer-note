@@ -206,8 +206,44 @@ function parseCard(text) {
 
   // --- STAGE: title (Task 3) ---
   // --- STAGE: company (Task 3) ---
-  // --- STAGE: exclude-address (Task 2) ---
-  // --- STAGE: phone-fax (Task 2) ---
+  // --- STAGE: exclude-address ---
+  const addrRe = /〒|郵便番号|丁目|番地|[都道府県].{0,8}[市区町村]|[市区町村].{0,10}\d|https?:\/\/|www\./;
+  for (let i = 0; i < lines.length; i++) {
+    if (used[i]) continue;
+    if (addrRe.test(lines[i])) { extraMemo.push(lines[i]); used[i] = true; }
+  }
+  // --- STAGE: phone-fax ---
+  function formatPhone(tok) {
+    if (!/\+81/.test(tok) && /-/.test(tok)) {
+      return tok.replace(/[()\s]+/g, '').replace(/[^\d-]/g, '').replace(/-+/g, '-').replace(/^-+|-+$/g, '');
+    }
+    const d = tok.replace(/[^\d]/g, '').replace(/^81/, '0');
+    if (/^(070|080|090)\d{8}$/.test(d)) return d.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3');
+    if (/^(0120|0800)\d{6}$/.test(d)) return d.replace(/(\d{4})(\d{3})(\d{3})/, '$1-$2-$3');
+    return d;
+  }
+  const phoneTok = /(?:\+81|0)[\d\-()\s]{7,13}\d/g;
+  for (let i = 0; i < lines.length; i++) {
+    if (used[i]) continue;
+    const line = lines[i];
+    const toks = line.match(phoneTok);
+    if (!toks) continue;
+    let lineHadTel = false;
+    const memoNums = [];
+    for (const tok of toks) {
+      const digits = tok.replace(/[^\d]/g, '').replace(/^81/, '0');
+      if (!/^0\d{9,10}$/.test(digits)) continue;
+      const before = line.slice(0, line.indexOf(tok));
+      const isFax = /FAX|ファ?ックス/i.test(before) && !/TEL|電話|携帯/i.test(before.slice(-6));
+      const formatted = formatPhone(tok);
+      if (!isFax && !result.phone) { result.phone = formatted; lineHadTel = true; }
+      else { memoNums.push(isFax ? 'FAX ' + formatted : formatted); }
+    }
+    if (lineHadTel || memoNums.length) {
+      used[i] = true;
+      memoNums.forEach(n => extraMemo.push(n));
+    }
+  }
   // --- STAGE: name (Task 3) ---
 
   // --- assemble memo ---
