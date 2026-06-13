@@ -336,6 +336,24 @@ function parseCard(text) {
 if (typeof module !== 'undefined' && module.exports) module.exports = { parseCard };
 /* PARSER:END */
 
+/* CFGHASH:START */
+function b64urlEncode(str) {
+  return btoa(unescape(encodeURIComponent(str))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function parseConfigHash(hash) {
+  var m = /^#cfg=(.+)$/.exec(String(hash == null ? '' : hash));
+  if (!m) return null;
+  try {
+    var b64 = m[1].replace(/-/g, '+').replace(/_/g, '/');
+    while (b64.length % 4) b64 += '=';
+    var o = JSON.parse(decodeURIComponent(escape(atob(b64))));
+    if (o && typeof o.u === 'string' && typeof o.s === 'string') return { endpoint: o.u, secret: o.s };
+    return null;
+  } catch (e) { return null; }
+}
+if (typeof module !== 'undefined' && module.exports) module.exports = { b64urlEncode: b64urlEncode, parseConfigHash: parseConfigHash };
+/* CFGHASH:END */
+
 function setGuess(fieldId, on) {
   const input = document.getElementById(fieldId);
   const tag = document.getElementById(fieldId + '-guess');
