@@ -89,7 +89,10 @@
 <body>
 
 <div id="view-home" class="view active">
-  <h1>お客様ノート</h1>
+  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+    <h1 style="margin:0;">お客様ノート</h1>
+    <span class="back-link" style="margin:0; font-size:22px;" role="button" aria-label="設定" title="設定" onclick="showView('settings')">⚙️</span>
+  </div>
   <input type="search" id="home-search" class="field-input" placeholder="🔍 名前・会社で検索" style="margin-bottom:14px;">
   <div id="followup-section" style="display:none;">
     <div style="font-size:13px; color:var(--accent); margin-bottom:6px;">💬 そろそろ連絡しませんか？</div>
@@ -103,6 +106,26 @@
   <button class="btn" id="fab" onclick="showView('register')">📷 名刺を撮る</button>
 </div>
 
+<div id="view-settings" class="view">
+  <span class="back-link" onclick="showView('home')">← もどる</span>
+  <h1>設定</h1>
+  <div class="card">
+    <label class="field-label">AI読み取りサーバーURL</label>
+    <textarea id="set-endpoint" class="field-input" rows="2" placeholder="https://script.google.com/macros/s/.../exec" autocapitalize="off" autocomplete="off" spellcheck="false"></textarea>
+    <label class="field-label">合言葉（サーバーと同じもの）</label>
+    <input type="text" id="set-secret" class="field-input" autocapitalize="off" autocomplete="off" spellcheck="false">
+    <div class="paste-actions">
+      <button class="btn btn-sm" onclick="saveAiSettings()">保存して接続確認</button>
+      <button class="btn btn-ghost btn-sm" onclick="copySetupLink()">設定リンクをコピー</button>
+    </div>
+    <div id="set-status" aria-live="polite" style="margin-top:8px; font-size:13px; min-height:1.2em;"></div>
+    <div id="set-remaining" style="margin-top:6px; font-size:12px; color:var(--text-2);"></div>
+  </div>
+  <div class="card" style="font-size:12px; color:var(--text-2); line-height:1.7;">
+    AI読み取りは、名刺の写真をあなた専用サーバー経由でAIに送り、各欄を自動入力します（写真の保存はこの端末だけ）。<br>
+    「設定リンクをコピー」で作ったリンクをQRにして渡すと、相手は読み込むだけで設定完了します。
+  </div>
+</div>
 <div id="view-register" class="view">
   <span class="back-link" onclick="showView('home')">← もどる</span>
   <h1>お客様を登録</h1>
@@ -159,7 +182,7 @@ const STORAGE_KEY = 'customer-note-v1';
 
 const DEFAULT_DATA = {
   customers: [],
-  settings: { followUpDays: 14 },
+  settings: { followUpDays: 14, aiEndpoint: '', aiSecret: '', aiConsent: false },
   nextId: 1
 };
 
@@ -396,9 +419,63 @@ function clearPaste() {
   st.style.display = 'none'; st.textContent = '';
 }
 
+function aiErrorMessage(error) {
+  switch (error) {
+    case 'auth':      return 'サーバー側の設定（合言葉）をご確認ください';
+    case 'bad_image': return '画像が大きすぎます。撮り直すか手入力をどうぞ';
+    case 'limit':     return '本日のAI読み取り上限に達しました（明日0時JSTにリセット）';
+    case 'refusal':   return '自動で読み取れませんでした。手入力かOCRをどうぞ';
+    case 'upstream':  return 'AIが混み合っています。少し待つか手入力をどうぞ';
+    case 'parse':     return '読み取り結果を取得できませんでした。手入力をどうぞ';
+    default:          return 'うまくいきませんでした。手入力かOCRをどうぞ';
+  }
+}
+
+function showRemaining(n) {
+  const el = document.getElementById('set-remaining');
+  el.textContent = (typeof n === 'number') ? ('本日あと ' + n + ' 枚（明日0時JSTにリセット）') : '';
+}
+
+async function saveAiSettings() {
+  const ep = document.getElementById('set-endpoint').value.trim().replace(/\s+/g, '');
+  const sec = document.getElementById('set-secret').value.trim();
+  appData.settings.aiEndpoint = ep;
+  appData.settings.aiSecret = sec;
+  saveData();
+  const st = document.getElementById('set-status');
+  if (!ep) { st.textContent = ''; showRemaining(null); return; }
+  st.style.color = 'var(--text-2)'; st.textContent = '接続を確認しています…';
+  try {
+    const r = await fetch(ep, { method: 'POST', body: JSON.stringify({ action: 'ping', secret: sec }) });
+    const j = await r.json();
+    if (j && j.ok) { st.style.color = 'var(--accent)'; st.textContent = '✅ つながりました'; showRemaining(j.remaining); }
+    else { st.style.color = '#DC2626'; st.textContent = '✗ ' + aiErrorMessage(j && j.error); }
+  } catch (e) {
+    st.style.color = '#DC2626'; st.textContent = '✗ つながりません（URL・合言葉をご確認ください）';
+  }
+}
+
+function copySetupLink() {
+  const link = location.origin + location.pathname + '#cfg=' + b64urlEncode(JSON.stringify({ u: appData.settings.aiEndpoint, s: appData.settings.aiSecret }));
+  const st = document.getElementById('set-status');
+  navigator.clipboard.writeText(link).then(() => {
+    st.style.color = 'var(--accent)'; st.textContent = '設定リンクをコピーしました。QRにして相手に渡せます';
+  }, () => {
+    st.style.color = '#DC2626'; st.textContent = 'コピーできませんでした';
+  });
+}
+
+function syncSettingsForm() {
+  document.getElementById('set-endpoint').value = appData.settings.aiEndpoint || '';
+  document.getElementById('set-secret').value = appData.settings.aiSecret || '';
+  document.getElementById('set-status').textContent = '';
+  showRemaining(null);
+}
+
 function showView(name) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.getElementById('view-' + name).classList.add('active');
+  if (name === 'settings') syncSettingsForm();
   window.scrollTo(0, 0);
 }
 
@@ -578,6 +655,17 @@ function deleteCustomer() {
 }
 
 appData = loadData();
+(function applyHashConfig() {
+  const cfg = parseConfigHash(location.hash);
+  if (cfg) {
+    appData.settings.aiEndpoint = cfg.endpoint;
+    appData.settings.aiSecret = cfg.secret;
+    appData.settings.aiConsent = false;
+    saveData();
+    history.replaceState(null, '', location.pathname + location.search);
+    alert('✅ AI読み取りの設定が完了しました');
+  }
+})();
 renderHome();
 
 document.getElementById('home-search').addEventListener('input', renderHome);
