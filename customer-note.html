@@ -159,9 +159,9 @@
     <label class="field-label">会社・屋号</label>
     <input type="text" id="reg-company" class="field-input"><span id="reg-company-guess" class="guess-tag">推測</span>
     <label class="field-label">電話番号</label>
-    <input type="tel" id="reg-phone" class="field-input">
+    <input type="tel" id="reg-phone" class="field-input"><span id="reg-phone-guess" class="guess-tag">要確認</span>
     <label class="field-label">メール</label>
-    <input type="email" id="reg-email" class="field-input">
+    <input type="email" id="reg-email" class="field-input"><span id="reg-email-guess" class="guess-tag">要確認</span>
     <label class="field-label">メモ（役職・住所・出会った場所など）</label>
     <textarea id="reg-note" class="field-input" rows="4"></textarea>
   </div>
@@ -384,17 +384,12 @@ function setGuess(fieldId, on) {
   else { input.classList.remove('guessed'); if (tag) tag.classList.remove('on'); }
 }
 
-function runParse() {
-  const ta = document.getElementById('reg-paste');
-  if (!ta.value.trim()) { alert('貼り付け欄が空です'); return; }
-  const ids = ['reg-name','reg-company','reg-phone','reg-email','reg-note'];
-  const hasContent = ids.some(id => document.getElementById(id).value.trim());
-  if (hasContent && !confirm('入力済みの内容を読み取り結果で置き換えますか？')) return;
-  const p = parseCard(ta.value);
+function applyParsed(p, source) {
+  const isAi = source === 'ai';
   if (p.name)    { document.getElementById('reg-name').value = p.name; setGuess('reg-name', true); }
   if (p.company) { document.getElementById('reg-company').value = p.company; setGuess('reg-company', true); }
-  if (p.phone)   { document.getElementById('reg-phone').value = p.phone; }
-  if (p.email)   { document.getElementById('reg-email').value = p.email; }
+  if (p.phone)   { document.getElementById('reg-phone').value = p.phone; if (isAi) setGuess('reg-phone', true); }
+  if (p.email)   { document.getElementById('reg-email').value = p.email; if (isAi) setGuess('reg-email', true); }
   if (p.memo) {
     const note = document.getElementById('reg-note');
     const existing = note.value.split('\n').map(s => s.trim()).filter(Boolean);
@@ -402,11 +397,25 @@ function runParse() {
       .forEach(line => { if (!existing.includes(line)) existing.push(line); });
     note.value = existing.join('\n');
   }
-  let msg = '✨ 読み取りました。電話とメールはそのまま、お名前と会社は念のため確認してくださいね';
-  if (!p.phone && !p.email) msg += '\n（電話・メールは見つかりませんでした。手で入れてくださいね）';
+  let msg;
+  if (isAi) {
+    msg = '✨ AIが読み取りました。お名前・会社・電話・メールは念のためご確認ください';
+  } else {
+    msg = '✨ 読み取りました。電話とメールはそのまま、お名前と会社は念のため確認してくださいね';
+    if (!p.phone && !p.email) msg += '\n（電話・メールは見つかりませんでした。手で入れてくださいね）';
+  }
   if (!p.name) msg += '\n（お名前は読み取れませんでした。上の欄にご記入を）';
   const st = document.getElementById('reg-paste-status');
   st.textContent = msg; st.style.display = 'block';
+}
+
+function runParse() {
+  const ta = document.getElementById('reg-paste');
+  if (!ta.value.trim()) { alert('貼り付け欄が空です'); return; }
+  const ids = ['reg-name','reg-company','reg-phone','reg-email','reg-note'];
+  const hasContent = ids.some(id => document.getElementById(id).value.trim());
+  if (hasContent && !confirm('入力済みの内容を読み取り結果で置き換えますか？')) return;
+  applyParsed(parseCard(ta.value), 'ocr');
 }
 
 function clearPaste() {
@@ -414,7 +423,7 @@ function clearPaste() {
   ['reg-name','reg-company','reg-phone','reg-email','reg-note'].forEach(id => {
     document.getElementById(id).value = '';
   });
-  setGuess('reg-name', false); setGuess('reg-company', false);
+  ['reg-name','reg-company','reg-phone','reg-email'].forEach(id => setGuess(id, false));
   const st = document.getElementById('reg-paste-status');
   st.style.display = 'none'; st.textContent = '';
 }
@@ -518,7 +527,7 @@ function resetRegisterForm() {
   });
   document.getElementById('reg-photo-input').value = '';
   document.getElementById('reg-paste').value = '';
-  setGuess('reg-name', false); setGuess('reg-company', false);
+  ['reg-name','reg-company','reg-phone','reg-email'].forEach(id => setGuess(id, false));
   const _st = document.getElementById('reg-paste-status');
   _st.style.display = 'none'; _st.textContent = '';
 }
@@ -670,7 +679,7 @@ renderHome();
 
 document.getElementById('home-search').addEventListener('input', renderHome);
 
-['reg-name','reg-company'].forEach(id => {
+['reg-name','reg-company','reg-phone','reg-email'].forEach(id => {
   document.getElementById(id).addEventListener('input', () => setGuess(id, false));
 });
 
