@@ -84,12 +84,23 @@
   .field-input.guessed { border-color:var(--accent); border-style:dashed; }
   .guess-tag { font-size:11px; color:var(--accent); margin-left:6px; display:none; }
   .guess-tag.on { display:inline; }
+  #reg-ai-wrap { display:none; margin-bottom:10px; }
+  .btn-ai { width:100%; background:var(--accent); }
+  .btn-ai:disabled { opacity:0.7; }
+  .ai-sub { font-size:11px; color:var(--text-2); text-align:center; margin-top:4px; }
+  @keyframes flashbg { 0% { background:#FEF9C3; } 100% { background:#FBFCFE; } }
+  .field-input.flash { animation: flashbg 0.6s ease-out; }
+  .ocr-details { margin-bottom:10px; }
+  .ocr-details > summary { cursor:pointer; font-size:13px; color:var(--text-2); padding:6px 0; }
 </style>
 </head>
 <body>
 
 <div id="view-home" class="view active">
-  <h1>お客様ノート</h1>
+  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+    <h1 style="margin:0;">お客様ノート</h1>
+    <span class="back-link" style="margin:0; font-size:22px;" role="button" aria-label="設定" title="設定" onclick="showView('settings')">⚙️</span>
+  </div>
   <input type="search" id="home-search" class="field-input" placeholder="🔍 名前・会社で検索" style="margin-bottom:14px;">
   <div id="followup-section" style="display:none;">
     <div style="font-size:13px; color:var(--accent); margin-bottom:6px;">💬 そろそろ連絡しませんか？</div>
@@ -103,6 +114,26 @@
   <button class="btn" id="fab" onclick="showView('register')">📷 名刺を撮る</button>
 </div>
 
+<div id="view-settings" class="view">
+  <span class="back-link" onclick="showView('home')">← もどる</span>
+  <h1>設定</h1>
+  <div class="card">
+    <label class="field-label">AI読み取りサーバーURL</label>
+    <textarea id="set-endpoint" class="field-input" rows="2" placeholder="https://script.google.com/macros/s/.../exec" autocapitalize="off" autocomplete="off" spellcheck="false"></textarea>
+    <label class="field-label">合言葉（サーバーと同じもの）</label>
+    <input type="text" id="set-secret" class="field-input" autocapitalize="off" autocomplete="off" spellcheck="false">
+    <div class="paste-actions">
+      <button class="btn btn-sm" onclick="saveAiSettings()">保存して接続確認</button>
+      <button class="btn btn-ghost btn-sm" onclick="copySetupLink()">設定リンクをコピー</button>
+    </div>
+    <div id="set-status" aria-live="polite" style="margin-top:8px; font-size:13px; min-height:1.2em;"></div>
+    <div id="set-remaining" style="margin-top:6px; font-size:12px; color:var(--text-2);"></div>
+  </div>
+  <div class="card" style="font-size:12px; color:var(--text-2); line-height:1.7;">
+    AI読み取りは、名刺の写真をあなた専用サーバー経由でAIに送り、各欄を自動入力します（写真の保存はこの端末だけ）。<br>
+    「設定リンクをコピー」で作ったリンクをQRにして渡すと、相手は読み込むだけで設定完了します。
+  </div>
+</div>
 <div id="view-register" class="view">
   <span class="back-link" onclick="showView('home')">← もどる</span>
   <h1>お客様を登録</h1>
@@ -113,7 +144,12 @@
       <input type="file" id="reg-photo-input" accept="image/*" capture="environment" style="display:none;">
     </label>
   </div>
-  <div class="card">
+  <div id="reg-ai-wrap">
+    <button class="btn btn-ai" id="reg-ai-btn" onclick="runAiRead()">🤖 AIで読み取る</button>
+    <div class="ai-sub">約0.3円／枚・数秒かかります</div>
+  </div>
+  <details class="card ocr-details">
+    <summary>うまく撮れない時：名刺の文字を貼り付けて読み取る</summary>
     <label class="field-label">名刺の文字を貼り付け（スマホのOCRでコピー）</label>
     <textarea id="reg-paste" class="field-input" rows="4"
       placeholder="スマホで名刺の文字をコピーして、ここに長押し→ペースト"
@@ -129,16 +165,16 @@
       Android：Googleレンズで名刺を写し、テキストを選択→コピー。<br>
       その後この欄を長押し→ペーストして［読み取る］。
     </details>
-  </div>
+  </details>
   <div class="card">
     <label class="field-label">お名前 *</label>
     <input type="text" id="reg-name" class="field-input" placeholder="山田 太郎"><span id="reg-name-guess" class="guess-tag">推測</span>
     <label class="field-label">会社・屋号</label>
     <input type="text" id="reg-company" class="field-input"><span id="reg-company-guess" class="guess-tag">推測</span>
     <label class="field-label">電話番号</label>
-    <input type="tel" id="reg-phone" class="field-input">
+    <input type="tel" id="reg-phone" class="field-input"><span id="reg-phone-guess" class="guess-tag">要確認</span>
     <label class="field-label">メール</label>
-    <input type="email" id="reg-email" class="field-input">
+    <input type="email" id="reg-email" class="field-input"><span id="reg-email-guess" class="guess-tag">要確認</span>
     <label class="field-label">メモ（役職・住所・出会った場所など）</label>
     <textarea id="reg-note" class="field-input" rows="4"></textarea>
   </div>
@@ -159,7 +195,7 @@ const STORAGE_KEY = 'customer-note-v1';
 
 const DEFAULT_DATA = {
   customers: [],
-  settings: { followUpDays: 14 },
+  settings: { followUpDays: 14, aiEndpoint: '', aiSecret: '', aiConsent: false },
   nextId: 1
 };
 
@@ -336,11 +372,112 @@ function parseCard(text) {
 if (typeof module !== 'undefined' && module.exports) module.exports = { parseCard };
 /* PARSER:END */
 
+/* CFGHASH:START */
+function b64urlEncode(str) {
+  return btoa(unescape(encodeURIComponent(str))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function parseConfigHash(hash) {
+  var m = /^#cfg=(.+)$/.exec(String(hash == null ? '' : hash));
+  if (!m) return null;
+  try {
+    var b64 = m[1].replace(/-/g, '+').replace(/_/g, '/');
+    while (b64.length % 4) b64 += '=';
+    var o = JSON.parse(decodeURIComponent(escape(atob(b64))));
+    if (o && typeof o.u === 'string' && typeof o.s === 'string') return { endpoint: o.u, secret: o.s };
+    return null;
+  } catch (e) { return null; }
+}
+if (typeof module !== 'undefined' && module.exports) module.exports = { b64urlEncode: b64urlEncode, parseConfigHash: parseConfigHash };
+/* CFGHASH:END */
+
 function setGuess(fieldId, on) {
   const input = document.getElementById(fieldId);
   const tag = document.getElementById(fieldId + '-guess');
   if (on) { input.classList.add('guessed'); if (tag) tag.classList.add('on'); }
   else { input.classList.remove('guessed'); if (tag) tag.classList.remove('on'); }
+}
+
+let aiBusy = false;
+
+function showAiStatus(msg) {
+  const st = document.getElementById('reg-paste-status');
+  st.textContent = msg; st.style.display = 'block';
+}
+
+function flashFields(ids) {
+  ids.forEach((id, i) => {
+    const el = document.getElementById(id);
+    setTimeout(() => {
+      el.classList.remove('flash');
+      void el.offsetWidth; // reflow でアニメ再起動
+      el.classList.add('flash');
+    }, i * 300);
+  });
+}
+
+async function runAiRead() {
+  if (aiBusy) return;
+  if (regPhotoBusy) { alert('写真を処理中です。少し待ってからもう一度押してください。'); return; }
+  if (!regPhotoData) { alert('先に名刺の写真を撮ってください'); return; }
+  if (!navigator.onLine) { showAiStatus('オフラインです。手入力かOCRをお使いください'); return; }
+  const ep = appData.settings.aiEndpoint, sec = appData.settings.aiSecret;
+  if (!ep) { if (confirm('AI読み取りの設定がありません。設定を開きますか？')) showView('settings'); return; }
+  const ids = ['reg-name','reg-company','reg-phone','reg-email','reg-note'];
+  if (ids.some(id => document.getElementById(id).value.trim()) &&
+      !confirm('入力済みの内容を読み取り結果で置き換えますか？（手で直した所も置き換わります）')) return;
+  if (!appData.settings.aiConsent) {
+    if (!confirm('名刺の写真をAIに送って読み取ります（写真の保存はこの端末だけ）。よろしいですか？')) return;
+    appData.settings.aiConsent = true; saveData();
+  }
+
+  aiBusy = true;
+  const btn = document.getElementById('reg-ai-btn');
+  const orig = btn.textContent;
+  btn.disabled = true; btn.textContent = '⏳ 読み取り中…（数秒かかります）';
+  showAiStatus('🤖 AIが名刺を読んでいます…');
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 20000);
+  try {
+    const r = await fetch(ep, { method: 'POST', body: JSON.stringify({ image: regPhotoData, secret: sec }), signal: ctrl.signal });
+    const j = await r.json();
+    if (j && j.ok) {
+      applyParsed(j.data, 'ai');
+      flashFields(['reg-name','reg-company','reg-phone','reg-email'].filter(id => document.getElementById(id).value.trim()));
+    } else {
+      showAiStatus(aiErrorMessage(j && j.error));
+    }
+  } catch (err) {
+    showAiStatus(err && err.name === 'AbortError'
+      ? '時間がかかっています。手入力かOCRに切り替えてください'
+      : 'つながりません。手入力かOCRをお使いください');
+  } finally {
+    clearTimeout(timer); aiBusy = false; btn.disabled = false; btn.textContent = orig;
+  }
+}
+
+function applyParsed(p, source) {
+  const isAi = source === 'ai';
+  if (p.name)    { document.getElementById('reg-name').value = p.name; setGuess('reg-name', true); }
+  if (p.company) { document.getElementById('reg-company').value = p.company; setGuess('reg-company', true); }
+  if (p.phone)   { document.getElementById('reg-phone').value = p.phone; if (isAi) setGuess('reg-phone', true); }
+  if (p.email)   { document.getElementById('reg-email').value = p.email; if (isAi) setGuess('reg-email', true); }
+  if (p.memo) {
+    const note = document.getElementById('reg-note');
+    const existing = note.value.split('\n').map(s => s.trim()).filter(Boolean);
+    p.memo.split('\n').map(s => s.trim()).filter(Boolean)
+      .forEach(line => { if (!existing.includes(line)) existing.push(line); });
+    note.value = existing.join('\n');
+  }
+  let msg;
+  if (isAi) {
+    msg = '✨ AIが読み取りました。お名前・会社・電話・メールは念のためご確認ください';
+  } else {
+    msg = '✨ 読み取りました。電話とメールはそのまま、お名前と会社は念のため確認してくださいね';
+    if (!p.phone && !p.email) msg += '\n（電話・メールは見つかりませんでした。手で入れてくださいね）';
+  }
+  if (!p.name) msg += '\n（お名前は読み取れませんでした。上の欄にご記入を）';
+  const st = document.getElementById('reg-paste-status');
+  st.textContent = msg; st.style.display = 'block';
 }
 
 function runParse() {
@@ -349,23 +486,7 @@ function runParse() {
   const ids = ['reg-name','reg-company','reg-phone','reg-email','reg-note'];
   const hasContent = ids.some(id => document.getElementById(id).value.trim());
   if (hasContent && !confirm('入力済みの内容を読み取り結果で置き換えますか？')) return;
-  const p = parseCard(ta.value);
-  if (p.name)    { document.getElementById('reg-name').value = p.name; setGuess('reg-name', true); }
-  if (p.company) { document.getElementById('reg-company').value = p.company; setGuess('reg-company', true); }
-  if (p.phone)   { document.getElementById('reg-phone').value = p.phone; }
-  if (p.email)   { document.getElementById('reg-email').value = p.email; }
-  if (p.memo) {
-    const note = document.getElementById('reg-note');
-    const existing = note.value.split('\n').map(s => s.trim()).filter(Boolean);
-    p.memo.split('\n').map(s => s.trim()).filter(Boolean)
-      .forEach(line => { if (!existing.includes(line)) existing.push(line); });
-    note.value = existing.join('\n');
-  }
-  let msg = '✨ 読み取りました。電話とメールはそのまま、お名前と会社は念のため確認してくださいね';
-  if (!p.phone && !p.email) msg += '\n（電話・メールは見つかりませんでした。手で入れてくださいね）';
-  if (!p.name) msg += '\n（お名前は読み取れませんでした。上の欄にご記入を）';
-  const st = document.getElementById('reg-paste-status');
-  st.textContent = msg; st.style.display = 'block';
+  applyParsed(parseCard(ta.value), 'ocr');
 }
 
 function clearPaste() {
@@ -373,14 +494,68 @@ function clearPaste() {
   ['reg-name','reg-company','reg-phone','reg-email','reg-note'].forEach(id => {
     document.getElementById(id).value = '';
   });
-  setGuess('reg-name', false); setGuess('reg-company', false);
+  ['reg-name','reg-company','reg-phone','reg-email'].forEach(id => setGuess(id, false));
   const st = document.getElementById('reg-paste-status');
   st.style.display = 'none'; st.textContent = '';
+}
+
+function aiErrorMessage(error) {
+  switch (error) {
+    case 'auth':      return 'サーバー側の設定（合言葉）をご確認ください';
+    case 'bad_image': return '画像が大きすぎます。撮り直すか手入力をどうぞ';
+    case 'limit':     return '本日のAI読み取り上限に達しました（明日0時JSTにリセット）';
+    case 'refusal':   return '自動で読み取れませんでした。手入力かOCRをどうぞ';
+    case 'upstream':  return 'AIが混み合っています。少し待つか手入力をどうぞ';
+    case 'parse':     return '読み取り結果を取得できませんでした。手入力をどうぞ';
+    default:          return 'うまくいきませんでした。手入力かOCRをどうぞ';
+  }
+}
+
+function showRemaining(n) {
+  const el = document.getElementById('set-remaining');
+  el.textContent = (typeof n === 'number') ? ('本日あと ' + n + ' 枚（明日0時JSTにリセット）') : '';
+}
+
+async function saveAiSettings() {
+  const ep = document.getElementById('set-endpoint').value.trim().replace(/\s+/g, '');
+  const sec = document.getElementById('set-secret').value.trim();
+  appData.settings.aiEndpoint = ep;
+  appData.settings.aiSecret = sec;
+  saveData();
+  const st = document.getElementById('set-status');
+  if (!ep) { st.textContent = ''; showRemaining(null); return; }
+  st.style.color = 'var(--text-2)'; st.textContent = '接続を確認しています…';
+  try {
+    const r = await fetch(ep, { method: 'POST', body: JSON.stringify({ action: 'ping', secret: sec }) });
+    const j = await r.json();
+    if (j && j.ok) { st.style.color = 'var(--accent)'; st.textContent = '✅ つながりました'; showRemaining(j.remaining); }
+    else { st.style.color = '#DC2626'; st.textContent = '✗ ' + aiErrorMessage(j && j.error); }
+  } catch (e) {
+    st.style.color = '#DC2626'; st.textContent = '✗ つながりません（URL・合言葉をご確認ください）';
+  }
+}
+
+function copySetupLink() {
+  const link = location.origin + location.pathname + '#cfg=' + b64urlEncode(JSON.stringify({ u: appData.settings.aiEndpoint, s: appData.settings.aiSecret }));
+  const st = document.getElementById('set-status');
+  navigator.clipboard.writeText(link).then(() => {
+    st.style.color = 'var(--accent)'; st.textContent = '設定リンクをコピーしました。QRにして相手に渡せます';
+  }, () => {
+    st.style.color = '#DC2626'; st.textContent = 'コピーできませんでした';
+  });
+}
+
+function syncSettingsForm() {
+  document.getElementById('set-endpoint').value = appData.settings.aiEndpoint || '';
+  document.getElementById('set-secret').value = appData.settings.aiSecret || '';
+  document.getElementById('set-status').textContent = '';
+  showRemaining(null);
 }
 
 function showView(name) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.getElementById('view-' + name).classList.add('active');
+  if (name === 'settings') syncSettingsForm();
   window.scrollTo(0, 0);
 }
 
@@ -415,6 +590,8 @@ function resizeImage(file, callback, onFail) {
 
 function resetRegisterForm() {
   regPhotoData = null;
+  const aiWrap = document.getElementById('reg-ai-wrap');
+  if (aiWrap) aiWrap.style.display = 'none';
   const prev = document.getElementById('reg-photo-preview');
   prev.style.display = 'none';
   prev.src = '';
@@ -423,7 +600,7 @@ function resetRegisterForm() {
   });
   document.getElementById('reg-photo-input').value = '';
   document.getElementById('reg-paste').value = '';
-  setGuess('reg-name', false); setGuess('reg-company', false);
+  ['reg-name','reg-company','reg-phone','reg-email'].forEach(id => setGuess(id, false));
   const _st = document.getElementById('reg-paste-status');
   _st.style.display = 'none'; _st.textContent = '';
 }
@@ -560,11 +737,22 @@ function deleteCustomer() {
 }
 
 appData = loadData();
+(function applyHashConfig() {
+  const cfg = parseConfigHash(location.hash);
+  if (cfg) {
+    appData.settings.aiEndpoint = cfg.endpoint;
+    appData.settings.aiSecret = cfg.secret;
+    appData.settings.aiConsent = false;
+    saveData();
+    history.replaceState(null, '', location.pathname + location.search);
+    alert('✅ AI読み取りの設定が完了しました');
+  }
+})();
 renderHome();
 
 document.getElementById('home-search').addEventListener('input', renderHome);
 
-['reg-name','reg-company'].forEach(id => {
+['reg-name','reg-company','reg-phone','reg-email'].forEach(id => {
   document.getElementById(id).addEventListener('input', () => setGuess(id, false));
 });
 
@@ -574,12 +762,14 @@ document.getElementById('reg-photo-input').addEventListener('change', (e) => {
   regPhotoBusy = true;
   resizeImage(file, (dataUrl) => {
     regPhotoData = dataUrl;
+    document.getElementById('reg-ai-wrap').style.display = navigator.onLine ? 'block' : 'none';
     const prev = document.getElementById('reg-photo-preview');
     prev.src = dataUrl;
     prev.style.display = 'block';
     regPhotoBusy = false;
   }, () => {
     regPhotoData = null;
+    document.getElementById('reg-ai-wrap').style.display = 'none';
     const prev = document.getElementById('reg-photo-preview');
     prev.style.display = 'none';
     prev.src = '';
