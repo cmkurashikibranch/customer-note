@@ -651,6 +651,34 @@ function syncBackupStatus(msg) {
     : '最終バックアップ：まだありません';
 }
 
+async function importBackup(text) {
+  const v = validateBackup(text);
+  if (v && v.tooNew) { syncBackupStatus('新しい版のバックアップです。アプリを更新してください'); return; }
+  if (!v) { syncBackupStatus('このファイルは読み込めませんでした。バックアップファイルか確認してください'); return; }
+
+  // 事前バックアップ提案（今日まだ保存していなければ）
+  if (appData.customers.length > 0 && appData.settings.lastBackup !== todayStr()) {
+    if (confirm('先に今のデータをバックアップ保存しますか？')) {
+      const ok = await exportBackup();
+      if (!ok) return; // 保存をやめた＝復元も中断
+    }
+  }
+
+  const nowN = appData.customers.length;
+  const fileN = v.data.customers.length;
+  const when = (typeof v.exportedAt === 'string' && v.exportedAt) ? v.exportedAt + 'に保存した' : '';
+  let msg = when + 'ファイル（' + fileN + '件）で、今の' + nowN + '件を置き換えます。';
+  msg += (nowN > fileN) ? (nowN - fileN) + '件減ります。' : fileN + '件になります。';
+  msg += 'よろしいですか？';
+  if (!confirm(msg)) return;
+
+  const prev = appData;
+  appData = normalizeBackup(v, prev.settings, DEFAULT_DATA.settings, todayStr());
+  if (!saveData()) { appData = prev; return; } // 容量超過：元に戻す（saveDataがalert済み）
+  syncBackupStatus('✅ ' + fileN + '件を復元しました');
+  renderHome();
+}
+
 function syncSettingsForm() {
   document.getElementById('set-endpoint').value = appData.settings.aiEndpoint || '';
   document.getElementById('set-secret').value = appData.settings.aiSecret || '';
@@ -883,6 +911,16 @@ document.getElementById('reg-photo-input').addEventListener('change', (e) => {
     e.target.value = '';
     regPhotoBusy = false;
   });
+});
+
+document.getElementById('backup-file-input').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  e.target.value = ''; // 同じファイルを2回選べるように
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onerror = () => syncBackupStatus('ファイルを読めませんでした');
+  reader.onload = () => importBackup(reader.result);
+  reader.readAsText(file);
 });
 </script>
 </body>
