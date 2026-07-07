@@ -195,7 +195,7 @@ const STORAGE_KEY = 'customer-note-v1';
 
 const DEFAULT_DATA = {
   customers: [],
-  settings: { followUpDays: 14, aiEndpoint: '', aiSecret: '', aiConsent: false },
+  settings: { followUpDays: 14, aiEndpoint: '', aiSecret: '', aiConsent: false, lastBackup: '', reminderSnoozedOn: '' },
   nextId: 1
 };
 
@@ -389,6 +389,57 @@ function parseConfigHash(hash) {
 }
 if (typeof module !== 'undefined' && module.exports) module.exports = { b64urlEncode: b64urlEncode, parseConfigHash: parseConfigHash };
 /* CFGHASH:END */
+
+/* BACKUP:START */
+function buildBackupEnvelope(appData, today) {
+  return {
+    app: 'customer-note',
+    version: 1,
+    exportedAt: today,
+    data: {
+      customers: appData.customers,
+      nextId: appData.nextId,
+      settings: { followUpDays: appData.settings.followUpDays }
+    }
+  };
+}
+function backupFilename(today) {
+  return 'お客様ノート_バックアップ_' + today + '.json';
+}
+function validateBackup(text) {
+  var o;
+  try { o = JSON.parse(String(text == null ? '' : text)); } catch (e) { return null; }
+  if (!o || o.app !== 'customer-note') return null;
+  if (typeof o.version === 'number' && o.version > 1) return { tooNew: true };
+  if (!o.data || !Array.isArray(o.data.customers)) return null;
+  for (var i = 0; i < o.data.customers.length; i++) {
+    var c = o.data.customers[i];
+    if (!c || typeof c.id !== 'number' || typeof c.name !== 'string') return null;
+  }
+  return o;
+}
+function normalizeBackup(envelope, currentSettings, defaultSettings, today) {
+  var fallbackDate = (typeof envelope.exportedAt === 'string' && envelope.exportedAt) ? envelope.exportedAt : today;
+  var customers = envelope.data.customers.map(function (c) {
+    var out = Object.assign({}, c);
+    if (typeof out.lastContact !== 'string' || !out.lastContact) out.lastContact = fallbackDate;
+    if (!Array.isArray(out.history)) out.history = [];
+    return out;
+  });
+  // 端末ローカルな設定（AI設定・lastBackup・スヌーズ）は現端末値を維持し、followUpDaysのみファイルから
+  var settings = Object.assign({}, defaultSettings, currentSettings);
+  var fu = envelope.data.settings && envelope.data.settings.followUpDays;
+  if (typeof fu === 'number' && fu > 0) settings.followUpDays = fu;
+  var maxId = 0;
+  for (var i = 0; i < customers.length; i++) if (customers[i].id > maxId) maxId = customers[i].id;
+  var nextId = typeof envelope.data.nextId === 'number' ? envelope.data.nextId : 0;
+  if (nextId < maxId + 1) nextId = maxId + 1;
+  return { customers: customers, settings: settings, nextId: nextId };
+}
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { buildBackupEnvelope: buildBackupEnvelope, backupFilename: backupFilename, validateBackup: validateBackup, normalizeBackup: normalizeBackup };
+}
+/* BACKUP:END */
 
 function setGuess(fieldId, on) {
   const input = document.getElementById(fieldId);
