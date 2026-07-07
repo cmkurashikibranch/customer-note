@@ -133,6 +133,19 @@
     AI読み取りは、名刺の写真をあなた専用サーバー経由でAIに送り、各欄を自動入力します（写真の保存はこの端末だけ）。<br>
     「設定リンクをコピー」で作ったリンクをQRにして渡すと、相手は読み込むだけで設定完了します。
   </div>
+  <div class="card">
+    <div style="font-size:14px; font-weight:600; margin-bottom:8px;">💾 データを守る</div>
+    <div class="paste-actions" style="margin-top:0;">
+      <button class="btn btn-sm" onclick="exportBackup()">📤 バックアップを保存</button>
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('backup-file-input').click()">📥 戻す</button>
+      <input type="file" id="backup-file-input" accept=".json,application/json" style="display:none;">
+    </div>
+    <div id="backup-status" aria-live="polite" style="margin-top:8px; font-size:13px; color:var(--accent); min-height:1.2em;"></div>
+    <div id="backup-last" style="margin-top:4px; font-size:12px; color:var(--text-2);"></div>
+    <div style="margin-top:8px; font-size:12px; color:var(--text-2); line-height:1.7;">
+      お客様のデータをファイルにして手元に残せます。機種変更やデータ消去に備えて、ときどき保存してください。
+    </div>
+  </div>
 </div>
 <div id="view-register" class="view">
   <span class="back-link" onclick="showView('home')">← もどる</span>
@@ -596,11 +609,54 @@ function copySetupLink() {
   });
 }
 
+async function exportBackup() {
+  const today = todayStr();
+  const envelope = buildBackupEnvelope(appData, today);
+  const json = JSON.stringify(envelope);
+  const fname = backupFilename(today);
+  let via = 'download';
+  if (navigator.canShare) {
+    try {
+      const file = new File([json], fname, { type: 'application/json' });
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file] });
+        via = 'share';
+      }
+    } catch (e) {
+      if (e && e.name === 'AbortError') return false; // ユーザーがやめた：何もしない
+      via = 'download'; // それ以外の失敗はダウンロードに切替
+    }
+  }
+  if (via === 'download') {
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = fname;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  appData.settings.lastBackup = today;
+  saveData();
+  syncBackupStatus(via === 'share'
+    ? '✅ 保存しました'
+    : '✅ 保存しました（「ファイル」アプリの「ダウンロード」にあります）');
+  renderHome(); // リマインドを消す（Task 4）
+  return true;
+}
+
+function syncBackupStatus(msg) {
+  document.getElementById('backup-status').textContent = msg || '';
+  document.getElementById('backup-last').textContent = appData.settings.lastBackup
+    ? '最終バックアップ：' + appData.settings.lastBackup
+    : '最終バックアップ：まだありません';
+}
+
 function syncSettingsForm() {
   document.getElementById('set-endpoint').value = appData.settings.aiEndpoint || '';
   document.getElementById('set-secret').value = appData.settings.aiSecret || '';
   document.getElementById('set-status').textContent = '';
   showRemaining(null);
+  syncBackupStatus('');
 }
 
 function showView(name) {
