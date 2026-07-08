@@ -108,3 +108,21 @@ test('nextIdはmax(id)+1未満なら補正・空配列でも安全', () => {
   const env2 = { app: 'customer-note', version: 1, data: { customers: [] } };
   assert.strictEqual(normalizeBackup(env2, CURRENT, DEFAULTS, '2026-07-08').nextId, 1);
 });
+test('不正なphoto（data:image以外）はnullに落とす', () => {
+  const env = { app: 'customer-note', version: 1, exportedAt: '2026-06-20', data: { customers: [
+    { id: 1, name: 'A', photo: '"><img src=x onerror=alert(1)>' },
+    { id: 2, name: 'B', photo: 'data:image/jpeg;base64,abc' },
+    { id: 3, name: 'C', photo: 'javascript:alert(1)' }
+  ], nextId: 4 } };
+  const out = normalizeBackup(env, CURRENT, DEFAULTS, '2026-07-08');
+  assert.strictEqual(out.customers[0].photo, null);
+  assert.strictEqual(out.customers[1].photo, 'data:image/jpeg;base64,abc');
+  assert.strictEqual(out.customers[2].photo, null);
+});
+test('壊れたhistory要素は除去され、date/noteは文字列化される', () => {
+  const env = { app: 'customer-note', version: 1, exportedAt: '2026-06-20', data: { customers: [
+    { id: 1, name: 'A', lastContact: '2026-06-01', history: [null, 'x', { date: 123, note: null }, { date: '2026-06-01', note: 'ok' }] }
+  ], nextId: 2 } };
+  const out = normalizeBackup(env, CURRENT, DEFAULTS, '2026-07-08');
+  assert.deepStrictEqual(out.customers[0].history, [{ date: '123', note: '' }, { date: '2026-06-01', note: 'ok' }]);
+});

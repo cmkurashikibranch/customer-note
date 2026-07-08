@@ -443,6 +443,10 @@ function normalizeBackup(envelope, currentSettings, defaultSettings, today) {
     var out = Object.assign({}, c);
     if (typeof out.lastContact !== 'string' || !out.lastContact) out.lastContact = fallbackDate;
     if (!Array.isArray(out.history)) out.history = [];
+    out.history = out.history
+      .filter(function (h) { return h && typeof h === 'object'; })
+      .map(function (h) { return { date: String(h.date == null ? '' : h.date), note: String(h.note == null ? '' : h.note) }; });
+    if (typeof out.photo !== 'string' || !/^data:image\//.test(out.photo)) out.photo = null;
     return out;
   });
   // 端末ローカルな設定（AI設定・lastBackup・スヌーズ）は現端末値を維持し、followUpDaysのみファイルから
@@ -690,7 +694,7 @@ async function importBackup(text) {
 
   const prev = appData;
   appData = normalizeBackup(v, prev.settings, DEFAULT_DATA.settings, todayStr());
-  if (!saveData()) { appData = prev; return; } // 容量超過：元に戻す（saveDataがalert済み）
+  if (!saveData()) { appData = prev; syncBackupStatus('復元できませんでした（容量不足）。データは元のままです'); return; } // 容量超過：元に戻す（saveDataがalert済み）
   syncBackupStatus('✅ ' + fileN + '件を復元しました');
   renderHome();
 }
@@ -859,7 +863,7 @@ function escapeHtml(s) {
 
 function customerCard(c) {
   const thumb = c.photo
-    ? `<img class="cust-thumb" src="${c.photo}" alt="">`
+    ? `<img class="cust-thumb" src="${escapeHtml(c.photo)}" alt="">`
     : `<div class="cust-thumb">👤</div>`;
   const days = daysSince(c.lastContact);
   const sub = [c.company, days === 0 ? '今日連絡' : days + '日前に連絡'].filter(Boolean).join('・');
@@ -904,7 +908,7 @@ function renderDetail() {
   const c = appData.customers.find(x => x.id === detailId);
   if (!c) { showView('home'); return; }
   const photo = c.photo
-    ? `<img src="${c.photo}" onclick="openPhotoModal()" style="width:100%; border-radius:12px; cursor:zoom-in;">`
+    ? `<img src="${escapeHtml(c.photo)}" onclick="openPhotoModal()" style="width:100%; border-radius:12px; cursor:zoom-in;">`
     : '';
   const contacts = [
     c.phone ? `<a class="btn btn-ghost" href="tel:${escapeHtml(c.phone)}">📞 電話する</a>` : '',
@@ -912,7 +916,7 @@ function renderDetail() {
   ].filter(Boolean).join(' ');
   const history = [...c.history].reverse().map(h =>
     `<div style="padding:8px 0; border-bottom:1px solid #F1F5F9;">
-      <div style="font-size:12px; color:var(--text-2);">${h.date}</div>
+      <div style="font-size:12px; color:var(--text-2);">${escapeHtml(h.date)}</div>
       <div style="font-size:14px; white-space:pre-wrap;">${escapeHtml(h.note)}</div>
     </div>`).join('');
   document.getElementById('detail-content').innerHTML = `
