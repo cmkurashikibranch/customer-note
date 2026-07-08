@@ -809,7 +809,7 @@ function saveCustomer() {
   if (!name) { alert('お名前を入力してください'); return; }
   if (editingId !== null) {
     const c = appData.customers.find(x => x.id === editingId);
-    if (!c) { editingId = null; applyRegisterMode(); showView('home'); return; }
+    if (!c) { editingId = null; resetRegisterForm(); applyRegisterMode(); showView('home'); return; }
     const prev = { name: c.name, company: c.company, phone: c.phone, email: c.email, photo: c.photo };
     c.name = name;
     c.company = document.getElementById('reg-company').value.trim();
