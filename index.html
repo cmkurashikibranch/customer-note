@@ -102,6 +102,10 @@
     <span class="back-link" style="margin:0; font-size:22px;" role="button" aria-label="設定" title="設定" onclick="showView('settings')">⚙️</span>
   </div>
   <input type="search" id="home-search" class="field-input" placeholder="🔍 名前・会社で検索" style="margin-bottom:14px;">
+  <div id="backup-reminder" style="display:none; align-items:center; gap:8px; border:1.5px solid var(--accent-soft); background:var(--accent-soft); border-radius:var(--radius); padding:10px 12px; margin-bottom:14px; font-size:13px;">
+    <span onclick="showView('settings')" style="flex:1; cursor:pointer; color:var(--accent);">💾 そろそろバックアップしませんか？（タップで設定へ）</span>
+    <span onclick="snoozeBackupReminder(event)" role="button" aria-label="今日は閉じる" style="cursor:pointer; color:var(--text-2); font-size:16px; padding:0 4px;">×</span>
+  </div>
   <div id="followup-section" style="display:none;">
     <div style="font-size:13px; color:var(--accent); margin-bottom:6px;">💬 そろそろ連絡しませんか？</div>
     <div id="followup-list" style="border:1.5px solid var(--accent-soft); background:var(--accent-soft); border-radius:var(--radius); padding:8px; margin-bottom:16px;"></div>
@@ -111,7 +115,7 @@
   <div id="empty-message" style="display:none; text-align:center; color:var(--text-2); padding:40px 0;">
     まだ登録がありません。<br>下のボタンから名刺を撮ってみましょう。
   </div>
-  <button class="btn" id="fab" onclick="showView('register')">📷 名刺を撮る</button>
+  <button class="btn" id="fab" onclick="openRegister()">📷 名刺を撮る</button>
 </div>
 
 <div id="view-settings" class="view">
@@ -133,10 +137,23 @@
     AI読み取りは、名刺の写真をあなた専用サーバー経由でAIに送り、各欄を自動入力します（写真の保存はこの端末だけ）。<br>
     「設定リンクをコピー」で作ったリンクをQRにして渡すと、相手は読み込むだけで設定完了します。
   </div>
+  <div class="card">
+    <div style="font-size:14px; font-weight:600; margin-bottom:8px;">💾 データを守る</div>
+    <div class="paste-actions" style="margin-top:0;">
+      <button class="btn btn-sm" onclick="exportBackup()">📤 バックアップを保存</button>
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('backup-file-input').click()">📥 戻す</button>
+      <input type="file" id="backup-file-input" accept=".json,application/json" style="display:none;">
+    </div>
+    <div id="backup-status" aria-live="polite" style="margin-top:8px; font-size:13px; color:var(--accent); min-height:1.2em;"></div>
+    <div id="backup-last" style="margin-top:4px; font-size:12px; color:var(--text-2);"></div>
+    <div style="margin-top:8px; font-size:12px; color:var(--text-2); line-height:1.7;">
+      お客様のデータをファイルにして手元に残せます。機種変更やデータ消去に備えて、ときどき保存してください。
+    </div>
+  </div>
 </div>
 <div id="view-register" class="view">
-  <span class="back-link" onclick="showView('home')">← もどる</span>
-  <h1>お客様を登録</h1>
+  <span class="back-link" onclick="registerBack()">← もどる</span>
+  <h1 id="reg-title">お客様を登録</h1>
   <div class="card" style="text-align:center;">
     <img id="reg-photo-preview" style="display:none; width:100%; border-radius:12px; margin-bottom:8px;">
     <label class="btn btn-ghost" style="display:block;">
@@ -175,10 +192,12 @@
     <input type="tel" id="reg-phone" class="field-input"><span id="reg-phone-guess" class="guess-tag">要確認</span>
     <label class="field-label">メール</label>
     <input type="email" id="reg-email" class="field-input"><span id="reg-email-guess" class="guess-tag">要確認</span>
-    <label class="field-label">メモ（役職・住所・出会った場所など）</label>
-    <textarea id="reg-note" class="field-input" rows="4"></textarea>
+    <div id="reg-memo-wrap">
+      <label class="field-label">メモ（役職・住所・出会った場所など）</label>
+      <textarea id="reg-note" class="field-input" rows="4"></textarea>
+    </div>
   </div>
-  <button class="btn" style="width:100%;" onclick="saveCustomer()">保存する</button>
+  <button class="btn" id="reg-save-btn" style="width:100%;" onclick="saveCustomer()">保存する</button>
 </div>
 
 <div id="view-detail" class="view">
@@ -195,7 +214,7 @@ const STORAGE_KEY = 'customer-note-v1';
 
 const DEFAULT_DATA = {
   customers: [],
-  settings: { followUpDays: 14, aiEndpoint: '', aiSecret: '', aiConsent: false },
+  settings: { followUpDays: 14, aiEndpoint: '', aiSecret: '', aiConsent: false, lastBackup: '', reminderSnoozedOn: '' },
   nextId: 1
 };
 
@@ -390,6 +409,61 @@ function parseConfigHash(hash) {
 if (typeof module !== 'undefined' && module.exports) module.exports = { b64urlEncode: b64urlEncode, parseConfigHash: parseConfigHash };
 /* CFGHASH:END */
 
+/* BACKUP:START */
+function buildBackupEnvelope(appData, today) {
+  return {
+    app: 'customer-note',
+    version: 1,
+    exportedAt: today,
+    data: {
+      customers: appData.customers,
+      nextId: appData.nextId,
+      settings: { followUpDays: appData.settings.followUpDays }
+    }
+  };
+}
+function backupFilename(today) {
+  return 'お客様ノート_バックアップ_' + today + '.json';
+}
+function validateBackup(text) {
+  var o;
+  try { o = JSON.parse(String(text == null ? '' : text)); } catch (e) { return null; }
+  if (!o || o.app !== 'customer-note') return null;
+  if (typeof o.version === 'number' && o.version > 1) return { tooNew: true };
+  if (!o.data || !Array.isArray(o.data.customers)) return null;
+  for (var i = 0; i < o.data.customers.length; i++) {
+    var c = o.data.customers[i];
+    if (!c || typeof c.id !== 'number' || typeof c.name !== 'string') return null;
+  }
+  return o;
+}
+function normalizeBackup(envelope, currentSettings, defaultSettings, today) {
+  var fallbackDate = (typeof envelope.exportedAt === 'string' && envelope.exportedAt) ? envelope.exportedAt : today;
+  var customers = envelope.data.customers.map(function (c) {
+    var out = Object.assign({}, c);
+    if (typeof out.lastContact !== 'string' || !out.lastContact) out.lastContact = fallbackDate;
+    if (!Array.isArray(out.history)) out.history = [];
+    out.history = out.history
+      .filter(function (h) { return h && typeof h === 'object'; })
+      .map(function (h) { return { date: String(h.date == null ? '' : h.date), note: String(h.note == null ? '' : h.note) }; });
+    if (typeof out.photo !== 'string' || !/^data:image\//.test(out.photo)) out.photo = null;
+    return out;
+  });
+  // 端末ローカルな設定（AI設定・lastBackup・スヌーズ）は現端末値を維持し、followUpDaysのみファイルから
+  var settings = Object.assign({}, defaultSettings, currentSettings);
+  var fu = envelope.data.settings && envelope.data.settings.followUpDays;
+  if (typeof fu === 'number' && fu > 0) settings.followUpDays = fu;
+  var maxId = 0;
+  for (var i = 0; i < customers.length; i++) if (customers[i].id > maxId) maxId = customers[i].id;
+  var nextId = typeof envelope.data.nextId === 'number' ? envelope.data.nextId : 0;
+  if (nextId < maxId + 1) nextId = maxId + 1;
+  return { customers: customers, settings: settings, nextId: nextId };
+}
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { buildBackupEnvelope: buildBackupEnvelope, backupFilename: backupFilename, validateBackup: validateBackup, normalizeBackup: normalizeBackup };
+}
+/* BACKUP:END */
+
 function setGuess(fieldId, on) {
   const input = document.getElementById(fieldId);
   const tag = document.getElementById(fieldId + '-guess');
@@ -416,6 +490,7 @@ function flashFields(ids) {
 }
 
 async function runAiRead() {
+  if (editingId !== null) return; // 編集モードでは使わない
   if (aiBusy) return;
   if (regPhotoBusy) { alert('写真を処理中です。少し待ってからもう一度押してください。'); return; }
   if (!regPhotoData) { alert('先に名刺の写真を撮ってください'); return; }
@@ -481,6 +556,7 @@ function applyParsed(p, source) {
 }
 
 function runParse() {
+  if (editingId !== null) return; // 編集モードでは使わない
   const ta = document.getElementById('reg-paste');
   if (!ta.value.trim()) { alert('貼り付け欄が空です'); return; }
   const ids = ['reg-name','reg-company','reg-phone','reg-email','reg-note'];
@@ -490,6 +566,7 @@ function runParse() {
 }
 
 function clearPaste() {
+  if (editingId !== null) return; // 編集モードでは使わない
   document.getElementById('reg-paste').value = '';
   ['reg-name','reg-company','reg-phone','reg-email','reg-note'].forEach(id => {
     document.getElementById(id).value = '';
@@ -545,11 +622,89 @@ function copySetupLink() {
   });
 }
 
+async function exportBackup() {
+  const today = todayStr();
+  const envelope = buildBackupEnvelope(appData, today);
+  const json = JSON.stringify(envelope);
+  const fname = backupFilename(today);
+  let via = 'download';
+  if (navigator.canShare) {
+    try {
+      const file = new File([json], fname, { type: 'application/json' });
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file] });
+        via = 'share';
+      }
+    } catch (e) {
+      if (e && e.name === 'AbortError') return false; // ユーザーがやめた：何もしない
+      via = 'download'; // それ以外の失敗はダウンロードに切替
+    }
+  }
+  if (via === 'download') {
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = fname;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  appData.settings.lastBackup = today;
+  saveData();
+  syncBackupStatus(via === 'share'
+    ? '✅ 保存しました'
+    : '✅ 保存しました（「ファイル」アプリの「ダウンロード」にあります）');
+  renderHome(); // リマインドを消す（Task 4）
+  return true;
+}
+
+function syncBackupStatus(msg) {
+  document.getElementById('backup-status').textContent = msg || '';
+  document.getElementById('backup-last').textContent = appData.settings.lastBackup
+    ? '最終バックアップ：' + appData.settings.lastBackup
+    : '最終バックアップ：まだありません';
+}
+
+function snoozeBackupReminder(ev) {
+  ev.stopPropagation();
+  appData.settings.reminderSnoozedOn = todayStr();
+  saveData();
+  renderHome();
+}
+
+async function importBackup(text) {
+  const v = validateBackup(text);
+  if (v && v.tooNew) { syncBackupStatus('新しい版のバックアップです。アプリを更新してください'); return; }
+  if (!v) { syncBackupStatus('このファイルは読み込めませんでした。バックアップファイルか確認してください'); return; }
+
+  // 事前バックアップ提案（今日まだ保存していなければ）
+  if (appData.customers.length > 0 && appData.settings.lastBackup !== todayStr()) {
+    if (confirm('先に今のデータをバックアップ保存しますか？')) {
+      const ok = await exportBackup();
+      if (!ok) return; // 保存をやめた＝復元も中断
+    }
+  }
+
+  const nowN = appData.customers.length;
+  const fileN = v.data.customers.length;
+  const when = (typeof v.exportedAt === 'string' && v.exportedAt) ? v.exportedAt + 'に保存した' : '';
+  let msg = when + 'ファイル（' + fileN + '件）で、今の' + nowN + '件を置き換えます。';
+  msg += (nowN > fileN) ? (nowN - fileN) + '件減ります。' : fileN + '件になります。';
+  msg += 'よろしいですか？';
+  if (!confirm(msg)) return;
+
+  const prev = appData;
+  appData = normalizeBackup(v, prev.settings, DEFAULT_DATA.settings, todayStr());
+  if (!saveData()) { appData = prev; syncBackupStatus('復元できませんでした（容量不足）。データは元のままです'); return; } // 容量超過：元に戻す（saveDataがalert済み）
+  syncBackupStatus('✅ ' + fileN + '件を復元しました');
+  renderHome();
+}
+
 function syncSettingsForm() {
   document.getElementById('set-endpoint').value = appData.settings.aiEndpoint || '';
   document.getElementById('set-secret').value = appData.settings.aiSecret || '';
   document.getElementById('set-status').textContent = '';
   showRemaining(null);
+  syncBackupStatus('');
 }
 
 function showView(name) {
@@ -561,6 +716,53 @@ function showView(name) {
 
 let regPhotoData = null; // base64 or null
 let regPhotoBusy = false;
+
+let editingId = null; // null=新規登録／数値=そのidを編集中
+
+function applyRegisterMode() {
+  const edit = editingId !== null;
+  document.getElementById('reg-title').textContent = edit ? 'お客様情報を編集' : 'お客様を登録';
+  document.getElementById('reg-save-btn').textContent = edit ? '変更を保存' : '保存する';
+  document.querySelector('#view-register .ocr-details').style.display = edit ? 'none' : '';
+  document.getElementById('reg-memo-wrap').style.display = edit ? 'none' : '';
+  if (edit) document.getElementById('reg-ai-wrap').style.display = 'none';
+}
+
+function openRegister() {
+  if (editingId !== null) { editingId = null; resetRegisterForm(); } // 編集→新規のときだけリセット（下書き温存）
+  applyRegisterMode();
+  showView('register');
+}
+
+function registerBack() {
+  if (editingId !== null) {
+    editingId = null;
+    resetRegisterForm();
+    applyRegisterMode();
+    showView('detail'); // 編集は詳細に戻る
+  } else {
+    showView('home'); // 新規は下書きを残したままホームへ
+  }
+}
+
+function startEdit() {
+  const c = appData.customers.find(x => x.id === detailId);
+  if (!c) return;
+  editingId = c.id;
+  resetRegisterForm();
+  document.getElementById('reg-name').value = c.name;
+  document.getElementById('reg-company').value = c.company || '';
+  document.getElementById('reg-phone').value = c.phone || '';
+  document.getElementById('reg-email').value = c.email || '';
+  if (c.photo) {
+    regPhotoData = c.photo;
+    const prev = document.getElementById('reg-photo-preview');
+    prev.src = c.photo;
+    prev.style.display = 'block';
+  }
+  applyRegisterMode();
+  showView('register');
+}
 
 function resizeImage(file, callback, onFail) {
   const img = new Image();
@@ -609,6 +811,25 @@ function saveCustomer() {
   if (regPhotoBusy) { alert('写真を処理中です。少し待ってからもう一度押してください。'); return; }
   const name = document.getElementById('reg-name').value.trim();
   if (!name) { alert('お名前を入力してください'); return; }
+  if (editingId !== null) {
+    const c = appData.customers.find(x => x.id === editingId);
+    if (!c) { editingId = null; resetRegisterForm(); applyRegisterMode(); showView('home'); return; }
+    const prev = { name: c.name, company: c.company, phone: c.phone, email: c.email, photo: c.photo };
+    c.name = name;
+    c.company = document.getElementById('reg-company').value.trim();
+    c.phone = document.getElementById('reg-phone').value.trim();
+    c.email = document.getElementById('reg-email').value.trim();
+    c.photo = regPhotoData;
+    if (!saveData()) { Object.assign(c, prev); return; } // 容量超過：変更前に戻す
+    editingId = null;
+    resetRegisterForm();
+    applyRegisterMode();
+    renderDetail();
+    renderHome();
+    showView('detail');
+    return;
+  }
+  // ↓ 以降は既存の新規登録処理そのまま
   const note = document.getElementById('reg-note').value.trim();
   const customer = {
     id: appData.nextId++,
@@ -642,7 +863,7 @@ function escapeHtml(s) {
 
 function customerCard(c) {
   const thumb = c.photo
-    ? `<img class="cust-thumb" src="${c.photo}" alt="">`
+    ? `<img class="cust-thumb" src="${escapeHtml(c.photo)}" alt="">`
     : `<div class="cust-thumb">👤</div>`;
   const days = daysSince(c.lastContact);
   const sub = [c.company, days === 0 ? '今日連絡' : days + '日前に連絡'].filter(Boolean).join('・');
@@ -667,6 +888,12 @@ function renderHome() {
   document.getElementById('customer-list').innerHTML = sorted.map(customerCard).join('');
   document.getElementById('empty-message').style.display =
     appData.customers.length ? 'none' : 'block';
+
+  const s = appData.settings;
+  const needReminder = appData.customers.length >= 1 &&
+    (!s.lastBackup || daysSince(s.lastBackup) >= 14) &&
+    s.reminderSnoozedOn !== todayStr();
+  document.getElementById('backup-reminder').style.display = needReminder ? 'flex' : 'none';
 }
 
 let detailId = null;
@@ -681,7 +908,7 @@ function renderDetail() {
   const c = appData.customers.find(x => x.id === detailId);
   if (!c) { showView('home'); return; }
   const photo = c.photo
-    ? `<img src="${c.photo}" onclick="openPhotoModal()" style="width:100%; border-radius:12px; cursor:zoom-in;">`
+    ? `<img src="${escapeHtml(c.photo)}" onclick="openPhotoModal()" style="width:100%; border-radius:12px; cursor:zoom-in;">`
     : '';
   const contacts = [
     c.phone ? `<a class="btn btn-ghost" href="tel:${escapeHtml(c.phone)}">📞 電話する</a>` : '',
@@ -689,7 +916,7 @@ function renderDetail() {
   ].filter(Boolean).join(' ');
   const history = [...c.history].reverse().map(h =>
     `<div style="padding:8px 0; border-bottom:1px solid #F1F5F9;">
-      <div style="font-size:12px; color:var(--text-2);">${h.date}</div>
+      <div style="font-size:12px; color:var(--text-2);">${escapeHtml(h.date)}</div>
       <div style="font-size:14px; white-space:pre-wrap;">${escapeHtml(h.note)}</div>
     </div>`).join('');
   document.getElementById('detail-content').innerHTML = `
@@ -699,6 +926,7 @@ function renderDetail() {
       <div class="cust-sub">${escapeHtml(c.company || '')}</div>
       <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">${contacts}</div>
     </div>
+    <button class="btn btn-ghost" style="width:100%; margin-bottom:10px;" onclick="startEdit()">✏️ 編集</button>
     <button class="btn" style="width:100%; margin-bottom:10px;" onclick="markContacted()">✅ 連絡した</button>
     <div class="card">
       <div style="font-size:13px; color:var(--text-2); margin-bottom:4px;">やりとり履歴</div>
@@ -762,7 +990,7 @@ document.getElementById('reg-photo-input').addEventListener('change', (e) => {
   regPhotoBusy = true;
   resizeImage(file, (dataUrl) => {
     regPhotoData = dataUrl;
-    document.getElementById('reg-ai-wrap').style.display = navigator.onLine ? 'block' : 'none';
+    document.getElementById('reg-ai-wrap').style.display = (editingId === null && navigator.onLine) ? 'block' : 'none';
     const prev = document.getElementById('reg-photo-preview');
     prev.src = dataUrl;
     prev.style.display = 'block';
@@ -776,6 +1004,16 @@ document.getElementById('reg-photo-input').addEventListener('change', (e) => {
     e.target.value = '';
     regPhotoBusy = false;
   });
+});
+
+document.getElementById('backup-file-input').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  e.target.value = ''; // 同じファイルを2回選べるように
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onerror = () => syncBackupStatus('ファイルを読めませんでした');
+  reader.onload = () => importBackup(reader.result);
+  reader.readAsText(file);
 });
 </script>
 </body>
