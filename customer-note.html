@@ -102,6 +102,10 @@
     <span class="back-link" style="margin:0; font-size:22px;" role="button" aria-label="設定" title="設定" onclick="showView('settings')">⚙️</span>
   </div>
   <input type="search" id="home-search" class="field-input" placeholder="🔍 名前・会社で検索" style="margin-bottom:14px;">
+  <div id="backup-reminder" style="display:none; align-items:center; gap:8px; border:1.5px solid var(--accent-soft); background:var(--accent-soft); border-radius:var(--radius); padding:10px 12px; margin-bottom:14px; font-size:13px;">
+    <span onclick="showView('settings')" style="flex:1; cursor:pointer; color:var(--accent);">💾 そろそろバックアップしませんか？（タップで設定へ）</span>
+    <span onclick="snoozeBackupReminder(event)" role="button" aria-label="今日は閉じる" style="cursor:pointer; color:var(--text-2); font-size:16px; padding:0 4px;">×</span>
+  </div>
   <div id="followup-section" style="display:none;">
     <div style="font-size:13px; color:var(--accent); margin-bottom:6px;">💬 そろそろ連絡しませんか？</div>
     <div id="followup-list" style="border:1.5px solid var(--accent-soft); background:var(--accent-soft); border-radius:var(--radius); padding:8px; margin-bottom:16px;"></div>
@@ -651,6 +655,13 @@ function syncBackupStatus(msg) {
     : '最終バックアップ：まだありません';
 }
 
+function snoozeBackupReminder(ev) {
+  ev.stopPropagation();
+  appData.settings.reminderSnoozedOn = todayStr();
+  saveData();
+  renderHome();
+}
+
 async function importBackup(text) {
   const v = validateBackup(text);
   if (v && v.tooNew) { syncBackupStatus('新しい版のバックアップです。アプリを更新してください'); return; }
@@ -802,6 +813,12 @@ function renderHome() {
   document.getElementById('customer-list').innerHTML = sorted.map(customerCard).join('');
   document.getElementById('empty-message').style.display =
     appData.customers.length ? 'none' : 'block';
+
+  const s = appData.settings;
+  const needReminder = appData.customers.length >= 1 &&
+    (!s.lastBackup || daysSince(s.lastBackup) >= 14) &&
+    s.reminderSnoozedOn !== todayStr();
+  document.getElementById('backup-reminder').style.display = needReminder ? 'flex' : 'none';
 }
 
 let detailId = null;
