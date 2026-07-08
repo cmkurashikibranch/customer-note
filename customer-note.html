@@ -115,7 +115,7 @@
   <div id="empty-message" style="display:none; text-align:center; color:var(--text-2); padding:40px 0;">
     まだ登録がありません。<br>下のボタンから名刺を撮ってみましょう。
   </div>
-  <button class="btn" id="fab" onclick="showView('register')">📷 名刺を撮る</button>
+  <button class="btn" id="fab" onclick="openRegister()">📷 名刺を撮る</button>
 </div>
 
 <div id="view-settings" class="view">
@@ -152,8 +152,8 @@
   </div>
 </div>
 <div id="view-register" class="view">
-  <span class="back-link" onclick="showView('home')">← もどる</span>
-  <h1>お客様を登録</h1>
+  <span class="back-link" onclick="registerBack()">← もどる</span>
+  <h1 id="reg-title">お客様を登録</h1>
   <div class="card" style="text-align:center;">
     <img id="reg-photo-preview" style="display:none; width:100%; border-radius:12px; margin-bottom:8px;">
     <label class="btn btn-ghost" style="display:block;">
@@ -192,10 +192,12 @@
     <input type="tel" id="reg-phone" class="field-input"><span id="reg-phone-guess" class="guess-tag">要確認</span>
     <label class="field-label">メール</label>
     <input type="email" id="reg-email" class="field-input"><span id="reg-email-guess" class="guess-tag">要確認</span>
-    <label class="field-label">メモ（役職・住所・出会った場所など）</label>
-    <textarea id="reg-note" class="field-input" rows="4"></textarea>
+    <div id="reg-memo-wrap">
+      <label class="field-label">メモ（役職・住所・出会った場所など）</label>
+      <textarea id="reg-note" class="field-input" rows="4"></textarea>
+    </div>
   </div>
-  <button class="btn" style="width:100%;" onclick="saveCustomer()">保存する</button>
+  <button class="btn" id="reg-save-btn" style="width:100%;" onclick="saveCustomer()">保存する</button>
 </div>
 
 <div id="view-detail" class="view">
@@ -484,6 +486,7 @@ function flashFields(ids) {
 }
 
 async function runAiRead() {
+  if (editingId !== null) return; // 編集モードでは使わない
   if (aiBusy) return;
   if (regPhotoBusy) { alert('写真を処理中です。少し待ってからもう一度押してください。'); return; }
   if (!regPhotoData) { alert('先に名刺の写真を撮ってください'); return; }
@@ -549,6 +552,7 @@ function applyParsed(p, source) {
 }
 
 function runParse() {
+  if (editingId !== null) return; // 編集モードでは使わない
   const ta = document.getElementById('reg-paste');
   if (!ta.value.trim()) { alert('貼り付け欄が空です'); return; }
   const ids = ['reg-name','reg-company','reg-phone','reg-email','reg-note'];
@@ -558,6 +562,7 @@ function runParse() {
 }
 
 function clearPaste() {
+  if (editingId !== null) return; // 編集モードでは使わない
   document.getElementById('reg-paste').value = '';
   ['reg-name','reg-company','reg-phone','reg-email','reg-note'].forEach(id => {
     document.getElementById(id).value = '';
@@ -708,6 +713,53 @@ function showView(name) {
 let regPhotoData = null; // base64 or null
 let regPhotoBusy = false;
 
+let editingId = null; // null=新規登録／数値=そのidを編集中
+
+function applyRegisterMode() {
+  const edit = editingId !== null;
+  document.getElementById('reg-title').textContent = edit ? 'お客様情報を編集' : 'お客様を登録';
+  document.getElementById('reg-save-btn').textContent = edit ? '変更を保存' : '保存する';
+  document.querySelector('#view-register .ocr-details').style.display = edit ? 'none' : '';
+  document.getElementById('reg-memo-wrap').style.display = edit ? 'none' : '';
+  if (edit) document.getElementById('reg-ai-wrap').style.display = 'none';
+}
+
+function openRegister() {
+  if (editingId !== null) { editingId = null; resetRegisterForm(); } // 編集→新規のときだけリセット（下書き温存）
+  applyRegisterMode();
+  showView('register');
+}
+
+function registerBack() {
+  if (editingId !== null) {
+    editingId = null;
+    resetRegisterForm();
+    applyRegisterMode();
+    showView('detail'); // 編集は詳細に戻る
+  } else {
+    showView('home'); // 新規は下書きを残したままホームへ
+  }
+}
+
+function startEdit() {
+  const c = appData.customers.find(x => x.id === detailId);
+  if (!c) return;
+  editingId = c.id;
+  resetRegisterForm();
+  document.getElementById('reg-name').value = c.name;
+  document.getElementById('reg-company').value = c.company || '';
+  document.getElementById('reg-phone').value = c.phone || '';
+  document.getElementById('reg-email').value = c.email || '';
+  if (c.photo) {
+    regPhotoData = c.photo;
+    const prev = document.getElementById('reg-photo-preview');
+    prev.src = c.photo;
+    prev.style.display = 'block';
+  }
+  applyRegisterMode();
+  showView('register');
+}
+
 function resizeImage(file, callback, onFail) {
   const img = new Image();
   const url = URL.createObjectURL(file);
@@ -755,6 +807,25 @@ function saveCustomer() {
   if (regPhotoBusy) { alert('写真を処理中です。少し待ってからもう一度押してください。'); return; }
   const name = document.getElementById('reg-name').value.trim();
   if (!name) { alert('お名前を入力してください'); return; }
+  if (editingId !== null) {
+    const c = appData.customers.find(x => x.id === editingId);
+    if (!c) { editingId = null; applyRegisterMode(); showView('home'); return; }
+    const prev = { name: c.name, company: c.company, phone: c.phone, email: c.email, photo: c.photo };
+    c.name = name;
+    c.company = document.getElementById('reg-company').value.trim();
+    c.phone = document.getElementById('reg-phone').value.trim();
+    c.email = document.getElementById('reg-email').value.trim();
+    c.photo = regPhotoData;
+    if (!saveData()) { Object.assign(c, prev); return; } // 容量超過：変更前に戻す
+    editingId = null;
+    resetRegisterForm();
+    applyRegisterMode();
+    renderDetail();
+    renderHome();
+    showView('detail');
+    return;
+  }
+  // ↓ 以降は既存の新規登録処理そのまま
   const note = document.getElementById('reg-note').value.trim();
   const customer = {
     id: appData.nextId++,
@@ -851,6 +922,7 @@ function renderDetail() {
       <div class="cust-sub">${escapeHtml(c.company || '')}</div>
       <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">${contacts}</div>
     </div>
+    <button class="btn btn-ghost" style="width:100%; margin-bottom:10px;" onclick="startEdit()">✏️ 編集</button>
     <button class="btn" style="width:100%; margin-bottom:10px;" onclick="markContacted()">✅ 連絡した</button>
     <div class="card">
       <div style="font-size:13px; color:var(--text-2); margin-bottom:4px;">やりとり履歴</div>
@@ -914,7 +986,7 @@ document.getElementById('reg-photo-input').addEventListener('change', (e) => {
   regPhotoBusy = true;
   resizeImage(file, (dataUrl) => {
     regPhotoData = dataUrl;
-    document.getElementById('reg-ai-wrap').style.display = navigator.onLine ? 'block' : 'none';
+    document.getElementById('reg-ai-wrap').style.display = (editingId === null && navigator.onLine) ? 'block' : 'none';
     const prev = document.getElementById('reg-photo-preview');
     prev.src = dataUrl;
     prev.style.display = 'block';
