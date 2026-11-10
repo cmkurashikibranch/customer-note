@@ -395,6 +395,12 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { parseCar
 function b64urlEncode(str) {
   return btoa(unescape(encodeURIComponent(str))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
+// 設定リンクで受け付ける送り先は、GASのウェブアプリ（/exec）だけ。
+// 細工したリンクで、名刺の写真の送り先を他人のサーバーへ書き換えられないようにする（2026-11-10）
+function isAllowedEndpoint(u) {
+  return typeof u === 'string' &&
+    /^https:\/\/script\.google\.com\/(a\/macros\/[A-Za-z0-9.-]+|macros)\/s\/[A-Za-z0-9_-]+\/exec$/.test(u);
+}
 function parseConfigHash(hash) {
   var m = /^#cfg=(.+)$/.exec(String(hash == null ? '' : hash));
   if (!m) return null;
@@ -402,11 +408,11 @@ function parseConfigHash(hash) {
     var b64 = m[1].replace(/-/g, '+').replace(/_/g, '/');
     while (b64.length % 4) b64 += '=';
     var o = JSON.parse(decodeURIComponent(escape(atob(b64))));
-    if (o && typeof o.u === 'string' && typeof o.s === 'string') return { endpoint: o.u, secret: o.s };
+    if (o && typeof o.u === 'string' && typeof o.s === 'string' && isAllowedEndpoint(o.u)) return { endpoint: o.u, secret: o.s };
     return null;
   } catch (e) { return null; }
 }
-if (typeof module !== 'undefined' && module.exports) module.exports = { b64urlEncode: b64urlEncode, parseConfigHash: parseConfigHash };
+if (typeof module !== 'undefined' && module.exports) module.exports = { b64urlEncode: b64urlEncode, parseConfigHash: parseConfigHash, isAllowedEndpoint: isAllowedEndpoint };
 /* CFGHASH:END */
 
 /* BACKUP:START */
@@ -966,15 +972,26 @@ function deleteCustomer() {
 
 appData = loadData();
 (function applyHashConfig() {
+  if (!/^#cfg=/.test(location.hash)) return;
   const cfg = parseConfigHash(location.hash);
-  if (cfg) {
-    appData.settings.aiEndpoint = cfg.endpoint;
-    appData.settings.aiSecret = cfg.secret;
-    appData.settings.aiConsent = false;
-    saveData();
-    history.replaceState(null, '', location.pathname + location.search);
-    alert('✅ AI読み取りの設定が完了しました');
+  // 受け付けても断っても、リンクの中身（合言葉入り）はアドレス欄から消す
+  history.replaceState(null, '', location.pathname + location.search);
+  if (!cfg) {
+    alert('⚠️ この設定リンクは使えません（送り先が正しくありません）。設定は変えていません。');
+    return;
   }
+  const cur = appData.settings.aiEndpoint || '';
+  // すでに設定がある時は、上書きの前に必ず聞く（同じ送り先なら合言葉の入れ直しなので聞かない）
+  if (cur && cur !== cfg.endpoint &&
+      !confirm('AI読み取りの送り先を、このリンクの内容に入れ替えます。\n自分で用意したリンク（または信頼できる人から受け取ったリンク）ですか？\n\n心当たりが無ければ「キャンセル」を押してください。')) {
+    alert('設定は変えていません。');
+    return;
+  }
+  appData.settings.aiEndpoint = cfg.endpoint;
+  appData.settings.aiSecret = cfg.secret;
+  appData.settings.aiConsent = false;
+  saveData();
+  alert('✅ AI読み取りの設定が完了しました');
 })();
 renderHome();
 
